@@ -4,7 +4,7 @@
 #
 # WHAT THIS FILE IS RESPONSIBLE FOR
 #   - opening the camera (nobody else does)
-#   - calling the four task modules in a fixed order, every frame
+#   - calling whatever task modules exist, in a fixed order, every frame
 #   - timing each one, so we know who the bottleneck is
 #   - catching module crashes so one bad module cannot kill the game
 #   - rendering the scene and reacting to game events
@@ -12,7 +12,6 @@
 # RUN IT
 #   python main.py                      webcam, all four modules faked
 #   python main.py --source clip.mp4    a video file instead of the camera
-#   python main.py --real face          use the real face module, fake the rest
 #   python main.py --width 640          smaller frames, higher frame rate
 #
 # KEYS
@@ -34,8 +33,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from game_types import BUDGET_MS, GameState, Module          # noqa: E402
 from profiler import Profiler                               # noqa: E402
 from renderer import Renderer                               # noqa: E402
-from modules.stubs import (ControlStub, FaceStub,           # noqa: E402
-                           IdentityStub, PoseStub)
+
+# The four task modules, in the order they must run. Faces first because
+# pose and identity both need them. Control last because it decides things
+# and needs everything else to be up to date.
+TASKS = ("face", "pose", "identity", "control")
 
 # How many times a module may throw before we give up on it. The game keeps
 # running without it and the stats panel says so, which is the "controlled
@@ -43,39 +45,31 @@ from modules.stubs import (ControlStub, FaceStub,           # noqa: E402
 MAX_FAILURES = 5
 
 
-def build_modules(real: list[str]) -> list[Module]:
-    """One module per task, in the order they must run.
+def load_modules() -> tuple[list[Module], list[str]]:
+    """Load whatever task modules exist in modules/ and report what is missing.
 
-    Order matters. Faces come first because identity and pose both need them.
-    Control runs last because it needs everything else to be up to date.
+    Each task owner writes modules/<task>.py with a class called Module. Until
+    that file exists the task is simply skipped, so the game still runs and
+    the missing ones are listed on screen.
     """
-    chosen: list[Module] = []
-    for name, stub in (("face", FaceStub), ("pose", PoseStub),
-                       ("identity", IdentityStub), ("control", ControlStub)):
-        if name in real:
-            chosen.append(load_real(name))
-        else:
-            chosen.append(stub())
-    return chosen
-
-
-def load_real(name: str) -> Module:
-    """Import a teammate's real module.
-
-    Each task owner writes modules/<name>.py containing a class called
-    Module, matching the contract. Until that file exists this falls back to
-    the stub, so a missing teammate never blocks anyone.
-    """
-    try:
-        imported = __import__(f"modules.{name}", fromlist=["Module"])
-        instance = imported.Module()
-        print(f"[main] using the REAL {name} module")
-        return instance
-    except Exception as exc:                                  # noqa: BLE001
-        print(f"[main] no real {name} module yet ({exc.__class__.__name__}), using the stub")
-        from modules import stubs
-        return {"face": stubs.FaceStub, "pose": stubs.PoseStub,
-                "identity": stubs.IdentityStub, "control": stubs.ControlStub}[name]()
+    loaded: list[Module] = []
+    missing: list[str] = []
+    for name in TASKS:
+        try:
+            imported = __import__(f"modules.{name}", fromlist=["Module"])
+            instance = imported.Module()
+            if not getattr(instance, "name", ""):
+                instance.name = name
+            loaded.append(instance)
+            print(f"[main] loaded modules/{name}.py")
+        except ModuleNotFoundError:
+            missing.append(name)
+            print(f"[main] modules/{name}.py not delivered yet, skipping")
+        except Exception as exc:                              # noqa: BLE001
+            missing.append(name)
+            print(f"[main] modules/{name}.py failed to load "
+                  f"({exc.__class__.__name__}: {exc}), skipping")
+    return loaded, missing
 
 
 def open_source(source: str, width: int):
@@ -94,8 +88,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="IPCV project, main game loop")
     parser.add_argument("--source", default="0", help="webcam index or video file")
     parser.add_argument("--width", type=int, default=640, help="working frame width")
-    parser.add_argument("--real", nargs="*", default=[],
-                        help="modules to load for real: face pose identity control")
     parser.add_argument("--headless", type=int, default=0,
                         help="run N frames with no window, for testing")
     parser.add_argument("--snapshot", default="",
@@ -103,7 +95,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cap = open_source(args.source, args.width)
-    modules = build_modules(args.real)
+    modules, missing = load_modules()
     renderer = Renderer()
     profiler = Profiler()
 
@@ -159,7 +151,7 @@ def main() -> None:
         output = renderer.draw(frame, state)
         profiler.record("render", time.perf_counter() - started)
 
-        offline = [name for name, on in enabled.items() if not on]
+        offline = missing + [name for name, on in enabled.items() if not on]
         if show_stats:
             renderer.stats_panel(output, profiler.lines(), offline)
 

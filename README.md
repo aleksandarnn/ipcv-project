@@ -20,9 +20,9 @@ cd game
 python main.py
 ```
 
-The game runs today with placeholder modules, so you can see the whole pipeline
-working before any real tracking exists. See `game/README.md` for how to plug
-your own module in.
+Task modules are loaded automatically from `game/modules/`. Any task whose
+file does not exist yet is skipped, so the game always runs and the panel on
+screen lists what is still missing. See `game/README.md` for how to add yours.
 
 ## Layout
 
@@ -32,5 +32,5 @@ game/                the application
   main.py            the loop: camera, modules, timing, failure handling
   renderer.py        scene rendering
   profiler.py        frame rate and latency measurement
-  modules/           task modules; stubs.py holds the placeholders
+  modules/           one file per task: face.py, pose.py, identity.py, control.py
 ```
