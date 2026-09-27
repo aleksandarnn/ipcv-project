@@ -106,12 +106,29 @@ class DrawCommand:
     scale: float = 0.6
 
 
+# The events our game can raise. Task 4 raises them, task 5 turns them into
+# something you can see. Spelling matters: an event nobody recognises is
+# silently ignored, so agree any new one with me before using it.
+#
+#   attack      a player swung        strength = how fast the hand moved
+#   block       a player has both arms crossed, holding a guard
+#   dodge       a player moved out of the way in time
+#   damage      an attack landed      player_id = who got hit
+#   blocked     an attack was stopped by a guard
+#   missed      an attack hit nothing, because the other player dodged
+#   ko          a player reached zero health, the round is over
+#   round_start a new round is beginning
+#   player_lost / player_returned     tracking lost or regained a player
+EVENTS = ("attack", "block", "dodge", "damage", "blocked", "missed",
+          "ko", "round_start", "player_lost", "player_returned")
+
+
 @dataclass
 class GameEvent:
     """Something happened that the scene should react to.
 
-    Task 4 raises these. Task 5 turns them into visible scene changes.
-    kind examples: "hit", "score", "miss", "player_lost", "player_returned".
+    player_id is who the event is ABOUT. For "damage" that is the player who
+    got hit, not the one who swung.
     """
     kind: str
     player_id: int = -1

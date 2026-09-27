@@ -1,6 +1,9 @@
-# IPCV group project, game skeleton
+# Samurai Showdown
 
-Webcam-based multiplayer game. This is the frame that all five tasks plug into.
+A two-player webcam duel. Swing a hand to attack, cross both arms to block,
+move out of the way to dodge. One webcam, two players, no controllers.
+
+This is the frame that all five tasks plug into.
 
 Maintained by **Aleksandar Nikolov (s2523477)**, task 5, integration.
 
@@ -64,6 +67,25 @@ anybody else.
 4. **Do not crash the game.** `main.py` catches your exceptions, but after
    five failures your module is switched off and the stats panel says
    `OFFLINE` for everyone to see.
+
+## The events
+
+Task 4 raises these, task 5 makes them visible. The full list lives in
+`game_types.py`. Spelling matters: an event nobody recognises is ignored
+silently, so agree any new one first.
+
+| event | when | what the scene does |
+|---|---|---|
+| `attack` | a player swings | trail on the swinging arm |
+| `block` | both arms crossed | guard glow |
+| `dodge` | moved clear in time | brief motion streak |
+| `damage` | a hit landed | hard shake, red wash |
+| `blocked` | a guard stopped it | white spark, almost no shake |
+| `missed` | the swing hit air | barely anything |
+| `ko` | health reached zero | full shake and flash |
+
+The three outcomes deliberately look completely different, so players can
+tell instantly whether a swing landed, was blocked, or missed.
 
 ## Order the modules run in
 

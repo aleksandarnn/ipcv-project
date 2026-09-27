@@ -28,16 +28,34 @@ class Renderer:
 
     # ---------------------------------------------------------------- scene
     def react(self, state: GameState) -> None:
-        """Turn game events into scene changes. This is the task 5 deliverable."""
+        """Turn game events into scene changes. This is the task 5 deliverable.
+
+        A samurai duel needs the three outcomes to look completely different,
+        so the player can tell at a glance whether a swing landed, was
+        blocked, or missed. Colour and shake do that work.
+        """
         for event in state.events:
-            if event.kind == "hit":
-                self.shake = min(1.0, self.shake + 0.6 * event.strength)
-                self.flash = 0.8
-                player = state.player(event.player_id)
-                self.flash_colour = player.colour if player else (255, 255, 255)
-            elif event.kind == "score":
-                self.flash = 0.5
-                self.flash_colour = (80, 255, 80)
+            if event.kind == "damage":
+                # A hit landed. Hard shake and a red wash, the strongest
+                # reaction in the game.
+                self.shake = min(1.0, self.shake + 0.8 * event.strength)
+                self.flash = 0.85
+                self.flash_colour = (40, 40, 235)
+            elif event.kind == "blocked":
+                # Steel on steel. A short white spark, almost no shake,
+                # because nothing got through.
+                self.shake = min(1.0, self.shake + 0.2)
+                self.flash = 0.55
+                self.flash_colour = (235, 235, 245)
+            elif event.kind == "missed":
+                # The swing hit air. Barely anything, so a miss never feels
+                # as good as a hit.
+                self.flash = 0.18
+                self.flash_colour = (200, 200, 200)
+            elif event.kind == "ko":
+                self.shake = 1.0
+                self.flash = 1.0
+                self.flash_colour = (30, 30, 210)
             elif event.kind == "player_lost":
                 self.flash = 0.4
                 self.flash_colour = (60, 60, 255)

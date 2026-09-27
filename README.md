@@ -1,6 +1,10 @@
-# IPCV 2026-1A group project
+# Samurai Showdown
 
-Webcam-based interactive multiplayer game, University of Twente.
+IPCV 2026-1A group project, University of Twente.
+
+A two-player webcam duel. Attack by swinging a hand, defend by crossing both
+arms, dodge by moving your body out of the way. The controller is computer
+vision: one webcam, two players, no hardware.
 
 ## Task owners
 
