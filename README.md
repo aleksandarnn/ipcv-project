@@ -28,6 +28,12 @@ Task modules are loaded automatically from `game/modules/`. Any task whose
 file does not exist yet is skipped, so the game always runs and the panel on
 screen lists what is still missing. See `game/README.md` for how to add yours.
 
+## Requirements
+
+Each task owner writes the requirements for their own task in `docs/`.
+
+- [Task 5, integration](docs/requirements_task5.md)
+
 ## Layout
 
 ```
