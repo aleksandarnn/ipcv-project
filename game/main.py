@@ -37,7 +37,7 @@ from renderer import Renderer                               # noqa: E402
 # The four task modules, in the order they must run. Faces first because
 # pose and identity both need them. Control last because it decides things
 # and needs everything else to be up to date.
-TASKS = ("face", "pose", "identity", "control")
+TASKS = ("face", "identity", "pose", "control")
 
 # How many times a module may throw before we give up on it. The game keeps
 # running without it and the stats panel says so, which is the "controlled
@@ -85,9 +85,12 @@ def open_source(source: str, width: int):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="IPCV project, main game loop")
-    parser.add_argument("--source", default="0", help="webcam index or video file")
-    parser.add_argument("--width", type=int, default=640, help="working frame width")
+    parser = argparse.ArgumentParser(
+        description="IPCV project, main game loop")
+    parser.add_argument("--source", default="0",
+                        help="webcam index or video file")
+    parser.add_argument("--width", type=int, default=640,
+                        help="working frame width")
     parser.add_argument("--headless", type=int, default=0,
                         help="run N frames with no window, for testing")
     parser.add_argument("--snapshot", default="",
@@ -135,10 +138,12 @@ def main() -> None:
                     module.process(frame, state)
                 except Exception as exc:                      # noqa: BLE001
                     failures[module.name] += 1
-                    print(f"[main] {module.name} failed ({exc.__class__.__name__}: {exc})")
+                    print(
+                        f"[main] {module.name} failed ({exc.__class__.__name__}: {exc})")
                     if failures[module.name] >= MAX_FAILURES:
                         enabled[module.name] = False
-                        print(f"[main] {module.name} disabled after {MAX_FAILURES} failures")
+                        print(
+                            f"[main] {module.name} disabled after {MAX_FAILURES} failures")
                 spent = time.perf_counter() - started
                 profiler.record(module.name, spent)
                 budget = BUDGET_MS.get(module.name)
