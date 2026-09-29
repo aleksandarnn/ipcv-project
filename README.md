@@ -34,6 +34,10 @@ Each task owner writes the requirements for their own task in `docs/`.
 
 - [Task 5, integration](docs/requirements_task5.md)
 
+And a beginner walkthrough of every file in `game/`:
+
+- [The code, explained from scratch](docs/code_explained.md)
+
 ## Layout
 
 ```

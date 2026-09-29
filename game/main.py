@@ -10,7 +10,7 @@
 #   - rendering the scene and reacting to game events
 #
 # RUN IT
-#   python main.py                      webcam, all four modules faked
+#   python main.py                      webcam
 #   python main.py --source clip.mp4    a video file instead of the camera
 #   python main.py --width 640          smaller frames, higher frame rate
 #
