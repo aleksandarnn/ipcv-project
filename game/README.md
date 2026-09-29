@@ -107,6 +107,4 @@ per module, slowest first:
    render       0.14 ms
 ```
 
-With no task modules loaded the loop itself costs almost nothing, which is the
-baseline. Everything measured from here is the real modules. Re-measure after
-every integration.
+
