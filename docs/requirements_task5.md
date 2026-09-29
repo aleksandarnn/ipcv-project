@@ -61,3 +61,6 @@ Send me draw commands and I draw them in the right order.
 How dodging is detected, since one webcam cannot see depth directly. Also
 whether attacks are resolved by reach or by timing. Both need a team decision
 before task 4 can be finished.
+
+
+
