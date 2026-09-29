@@ -10,10 +10,10 @@ vision: one webcam, two players, no hardware.
 
 | Task | What it covers | Owner |
 |---|---|---|
-| 1 | Face tracking and augmented effects | TBD |
-| 2 | Body pose estimation and motion tracking | TBD |
-| 3 | Multiplayer detection and identity tracking | TBD |
-| 4 | Player interaction and game control | TBD |
+| 1 | Face tracking and augmented effects | Shilpa John (s number)|
+| 2 | Body pose estimation and motion tracking | Valerii (s number) |
+| 3 | Multiplayer detection and identity tracking | Akash(s number) |
+| 4 | Player interaction and game control | Vaishnav (s number) |
 | 5 | Scene processing and real-time integration | Aleksandar Nikolov (s2523477) |
 
 ## Getting started
