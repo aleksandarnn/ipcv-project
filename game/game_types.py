@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 # These are starting numbers. We measure and renegotiate once modules are real.
 BUDGET_MS = {
     "face": 8.0,       # task 1
-    "pose": 15.0,      # task 2
+    "pose": 20.0,      # task 2 — two lite crops @ ≤256px side
     "identity": 3.0,   # task 3
     "control": 3.0,    # task 4
     "render": 6.0,     # task 5
@@ -32,15 +32,27 @@ BUDGET_MS = {
 
 @dataclass
 class Keypoint:
-    """One tracked body point, in pixels, with how much we trust it."""
+    """One tracked body point from Task 2 (pose).
+
+    Coordinates are **crop-normalised** relative to that player's bbox from
+    Task 3: x,y ∈ [0, 1] across the crop width/height (roughly body-sized).
+    Velocities vx,vy are in crop-widths / crop-heights per second.
+    Task 4 reads wrist speed via ``speed`` for attack strength.
+    """
     x: float
     y: float
     confidence: float = 1.0
+    vx: float = 0.0
+    vy: float = 0.0
 
     @property
     def ok(self) -> bool:
         # Task 2: anything below this is treated as missing, not as a position.
         return self.confidence >= 0.4
+
+    @property
+    def speed(self) -> float:
+        return (self.vx * self.vx + self.vy * self.vy) ** 0.5
 
 
 @dataclass
@@ -55,6 +67,23 @@ class Face:
 
 
 @dataclass
+class BBox:
+    """Axis-aligned person box in full-frame pixels (Task 3 → Task 2)."""
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+    @property
+    def w(self) -> float:
+        return max(1.0, self.x1 - self.x0)
+
+    @property
+    def h(self) -> float:
+        return max(1.0, self.y1 - self.y0)
+
+
+@dataclass
 class Player:
     """Everything known about one player on this frame.
 
@@ -63,6 +92,7 @@ class Player:
     """
     player_id: int
     face: Face | None = None
+    bbox: BBox | None = None                     # Task 3: person crop for pose
     keypoints: dict[str, Keypoint] = field(default_factory=dict)
     colour: tuple[int, int, int] = (255, 255, 255)   # BGR, for HUD and wands
     health: int = 100
@@ -82,8 +112,61 @@ class Player:
 
 # Keypoint names every module must use. Agreed, not negotiable per person.
 KEYPOINTS = (
-    "nose", "left_wrist", "right_wrist", "left_elbow", "right_elbow",
-    "left_shoulder", "right_shoulder", "left_hip", "right_hip",
+    # Torso and arms — required for sword attacks and block
+    "left_shoulder", "right_shoulder",
+    "left_elbow", "right_elbow",
+    "left_wrist", "right_wrist",
+
+    # Legs — required for crouch, jump, and leg attacks
+    "left_hip", "right_hip",
+    "left_knee", "right_knee",
+    "left_ankle", "right_ankle",
+    "left_heel", "right_heel",
+    "left_foot_index", "right_foot_index",
+
+    # Left hand — required later for finger/rune gestures
+    "left_thumb_cmc",
+    "left_thumb_mcp",
+    "left_thumb_ip",
+    "left_thumb_tip",
+    "left_index_mcp",
+    "left_index_pip",
+    "left_index_dip",
+    "left_index_tip",
+    "left_middle_mcp",
+    "left_middle_pip",
+    "left_middle_dip",
+    "left_middle_tip",
+    "left_ring_mcp",
+    "left_ring_pip",
+    "left_ring_dip",
+    "left_ring_tip",
+    "left_pinky_mcp",
+    "left_pinky_pip",
+    "left_pinky_dip",
+    "left_pinky_tip",
+
+    # Right hand — same structure
+    "right_thumb_cmc",
+    "right_thumb_mcp",
+    "right_thumb_ip",
+    "right_thumb_tip",
+    "right_index_mcp",
+    "right_index_pip",
+    "right_index_dip",
+    "right_index_tip",
+    "right_middle_mcp",
+    "right_middle_pip",
+    "right_middle_dip",
+    "right_middle_tip",
+    "right_ring_mcp",
+    "right_ring_pip",
+    "right_ring_dip",
+    "right_ring_tip",
+    "right_pinky_mcp",
+    "right_pinky_pip",
+    "right_pinky_dip",
+    "right_pinky_tip",
 )
 
 

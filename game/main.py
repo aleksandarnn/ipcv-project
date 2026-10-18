@@ -86,9 +86,12 @@ def open_source(source: str, width: int):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="IPCV project, main game loop")
-    parser.add_argument("--source", default="0", help="webcam index or video file")
-    parser.add_argument("--width", type=int, default=640, help="working frame width")
+    parser = argparse.ArgumentParser(
+        description="IPCV project, main game loop")
+    parser.add_argument("--source", default="0",
+                        help="webcam index or video file")
+    parser.add_argument("--width", type=int, default=960,
+                        help="working frame width (higher = sharper pose, slower)")
     parser.add_argument("--headless", type=int, default=0,
                         help="run N frames with no window, for testing")
     parser.add_argument("--snapshot", default="",
@@ -96,6 +99,8 @@ def main() -> None:
     parser.add_argument("--detector", default="",
                         choices=["yolo", "mediapipe", "mog2"],
                         help="identity detector backend (overrides DETECTOR_MODE in identity.py)")
+    parser.add_argument("--debug", action="store_true",
+                        help="enable module debug overlays (pose skeleton, etc.)")
     args = parser.parse_args()
 
     import os
@@ -104,6 +109,10 @@ def main() -> None:
 
     cap = open_source(args.source, args.width)
     modules, missing = load_modules()
+    for module in modules:
+        if hasattr(module, "debug"):
+            module.debug = bool(args.debug)
+            print(f"[main] {module.name}.debug = {module.debug}")
     renderer = Renderer()
     profiler = Profiler()
 
@@ -143,10 +152,12 @@ def main() -> None:
                     module.process(frame, state)
                 except Exception as exc:                      # noqa: BLE001
                     failures[module.name] += 1
-                    print(f"[main] {module.name} failed ({exc.__class__.__name__}: {exc})")
+                    print(
+                        f"[main] {module.name} failed ({exc.__class__.__name__}: {exc})")
                     if failures[module.name] >= MAX_FAILURES:
                         enabled[module.name] = False
-                        print(f"[main] {module.name} disabled after {MAX_FAILURES} failures")
+                        print(
+                            f"[main] {module.name} disabled after {MAX_FAILURES} failures")
                 spent = time.perf_counter() - started
                 profiler.record(module.name, spent)
                 budget = BUDGET_MS.get(module.name)
