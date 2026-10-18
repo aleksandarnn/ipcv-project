@@ -89,16 +89,22 @@ def main() -> None:
         description="IPCV project, main game loop")
     parser.add_argument("--source", default="0",
                         help="webcam index or video file")
-    parser.add_argument("--width", type=int, default=640,
-                        help="working frame width")
+    parser.add_argument("--width", type=int, default=960,
+                        help="working frame width (higher = sharper pose, slower)")
     parser.add_argument("--headless", type=int, default=0,
                         help="run N frames with no window, for testing")
     parser.add_argument("--snapshot", default="",
                         help="save one rendered frame to this path, for the report")
+    parser.add_argument("--debug", action="store_true",
+                        help="enable module debug overlays (pose skeleton, etc.)")
     args = parser.parse_args()
 
     cap = open_source(args.source, args.width)
     modules, missing = load_modules()
+    for module in modules:
+        if hasattr(module, "debug"):
+            module.debug = bool(args.debug)
+            print(f"[main] {module.name}.debug = {module.debug}")
     renderer = Renderer()
     profiler = Profiler()
 
