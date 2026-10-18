@@ -2,19 +2,22 @@
 
 Contract
 --------
-**Input** (from Task 3, via ``state.players``):
+**Input** (from Task 3 / identity, via ``state.players``):
   - ``player_id``
-  - ``player.bbox`` — full-frame crop box around the person
+  - ``player.bbox`` — ``BBox`` in full-frame pixels (``x0, y0, x1, y1``)
 
-  Until Task 3 writes boxes, this module falls back to fixed left/right stubs
-  (``FIXED_BOXES``) so development can continue.
+  Pose attaches keypoints onto the Player objects identity already created.
+  With identity loaded, ``allow_stubs=False`` (set by main): empty players
+  means wait — no fake crops. Stubs (``FIXED_BOXES``) only if identity is off.
 
 **Output** (written onto each ``Player``):
   - ``keypoints[name]`` → ``Keypoint`` with
       - ``x, y``   crop-normalised position in \\[0, 1\\] (relative to bbox)
       - ``vx, vy`` crop-widths / crop-heights per second
       - ``confidence`` (use ``Keypoint.ok``)
-  - ``frames_missing`` — pose-level miss streak (Task 3 may overwrite later)
+
+  Does **not** own ``frames_missing``, ``bbox``, or ``colour`` when identity
+  already set them.
 
 **Debug**: run ``python main.py --debug`` (or set ``Module.debug = True``).
 Overlays boxes, skeleton, and velocity arrows. Off by default.
@@ -599,6 +602,9 @@ class Module:
         self._tracks: dict[int, _TrackState] = {}
         # Overlay boxes / skeleton / velocity arrows (enable with --debug).
         self.debug = False
+        # When identity is in the pipeline, main sets this False so we never
+        # invent the old left/right stub crops while waiting for detections.
+        self.allow_stubs = True
 
     def _make_landmarker(self):
         options = mp.tasks.vision.PoseLandmarkerOptions(
@@ -625,7 +631,7 @@ class Module:
     # ------------------------------------------------------------------
 
     def _stub_boxes_px(self, frame) -> list[tuple[int, int, int, int, int]]:
-        """Fixed left/right crops used until Task 3 supplies ``Player.bbox``."""
+        """Fixed left/right crops when identity has not populated players."""
         h, w = frame.shape[:2]
         out = []
         for player_id, nx0, ny0, nx1, ny1 in FIXED_BOXES:
@@ -636,19 +642,36 @@ class Module:
             ))
         return out
 
+    @staticmethod
+    def _bbox_xyxy(bbox) -> tuple[int, int, int, int] | None:
+        """Normalise Task 3 ``BBox`` (or legacy tuple) to int xyxy."""
+        if bbox is None:
+            return None
+        if isinstance(bbox, BBox):
+            return int(bbox.x0), int(bbox.y0), int(bbox.x1), int(bbox.y1)
+        # Legacy (x1, y1, x2, y2) tuple from older identity builds
+        if isinstance(bbox, (tuple, list)) and len(bbox) == 4:
+            return int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+        return None
+
     def _input_boxes_px(self, frame, state) -> list[tuple[int, int, int, int, int]]:
-        """Resolve (player_id, x0, y0, x1, y1) — Task 3 boxes or stubs."""
-        from_state: list[tuple[int, int, int, int, int]] = []
+        """Resolve (player_id, x0, y0, x1, y1) from identity, else stubs.
+
+        When identity is loaded (``allow_stubs=False``), an empty player list
+        means "nobody detected yet" — return no crops. Never invent the old
+        fixed left/right boxes in that case.
+
+        Stubs remain only for solo pose testing with identity disabled.
+        """
+        out: list[tuple[int, int, int, int, int]] = []
         for player in state.players:
-            if player.bbox is None:
+            xyxy = self._bbox_xyxy(player.bbox)
+            if xyxy is None:
                 continue
-            b = player.bbox
-            from_state.append((
-                player.player_id,
-                int(b.x0), int(b.y0), int(b.x1), int(b.y1),
-            ))
-        if from_state:
-            return from_state
+            x0, y0, x1, y1 = xyxy
+            out.append((player.player_id, x0, y0, x1, y1))
+        if out or state.players or not self.allow_stubs:
+            return out
         return self._stub_boxes_px(frame)
 
     def _pad_box(
@@ -720,6 +743,8 @@ class Module:
 
             player = self._ensure_player(state, player_id)
             player.keypoints = keypoints
+            # Identity owns bbox / colour / frames_missing. Only fill gaps
+            # when running without Task 3 (stub-box path created the player).
             if player.bbox is None:
                 player.bbox = BBox(
                     x0=float(box[0]), y0=float(box[1]),
@@ -727,10 +752,9 @@ class Module:
                 )
             if player.colour == (255, 255, 255):
                 player.colour = BOX_COLOURS.get(player_id, player.colour)
-            track = self._tracks[player_id]
-            player.frames_missing = track.frames_missing
 
             if self.debug and keypoints:
+                track = self._tracks[player_id]
                 self._draw_debug_keypoints(frame, keypoints, track, box)
 
         if self.debug:

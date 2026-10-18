@@ -24,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 import cv2
 
-from game_types import DrawCommand, GameEvent, GameState, Module as Base, Player
+from game_types import BBox, DrawCommand, GameEvent, GameState, Module as Base, Player
 
 # ── Detector selection ───────────────────────────────────────────────────────
 # Change this to compare detection backends:
@@ -198,25 +198,38 @@ class _Detector:
 
     def _init_mediapipe(self) -> None:
         import os, urllib.request
+        from pathlib import Path
         try:
             import mediapipe as mp
             from mediapipe.tasks import python as mp_py
             from mediapipe.tasks.python import vision as mp_vis
 
-            if not os.path.exists(self._MP_MODEL_FILE):
-                print(f"[identity] downloading MediaPipe model (~3 MB)…")
-                urllib.request.urlretrieve(self._MP_MODEL_URL, self._MP_MODEL_FILE)
+            # Prefer shared project models/ (same file pose uses), then cwd.
+            root_models = Path(__file__).resolve().parents[2] / "models"
+            candidates = (
+                root_models / "pose_landmarker_lite.task",
+                root_models / "pose_landmarker_full.task",
+                Path(self._MP_MODEL_FILE),
+            )
+            model_path = next((p for p in candidates if p.exists()), None)
+            if model_path is None:
+                model_path = root_models / "pose_landmarker_lite.task"
+                model_path.parent.mkdir(parents=True, exist_ok=True)
+                print("[identity] downloading MediaPipe model (~3 MB)…")
+                urllib.request.urlretrieve(self._MP_MODEL_URL, str(model_path))
 
             opts = mp_vis.PoseLandmarkerOptions(
                 base_options=mp_py.BaseOptions(
-                    model_asset_path=self._MP_MODEL_FILE
+                    model_asset_path=str(model_path)
                 ),
+                running_mode=mp_vis.RunningMode.IMAGE,
                 num_poses=2,
-                min_pose_detection_confidence=0.5,
-                min_pose_presence_confidence=0.5,
+                min_pose_detection_confidence=0.4,
+                min_pose_presence_confidence=0.4,
             )
             self._mp_landmarker = mp_vis.PoseLandmarker.create_from_options(opts)
-            print("[identity] detector: MediaPipe PoseLandmarker (2-pose lite)")
+            print(f"[identity] detector: MediaPipe PoseLandmarker "
+                  f"(2-pose, {model_path.name})")
         except Exception as e:
             print(f"[identity] MediaPipe Tasks API failed ({e}), falling back to MOG2")
             self._mode = "mog2"
@@ -631,9 +644,15 @@ class Module(Base):
             colour = COLOURS.get(tid, (200, 200, 200))
             x1, y1, x2, y2 = bbox
 
+            # BBox is the shared contract with Task 2 (pose): x0,y0,x1,y1
+            # in full-frame pixels. Clear the box while lost so pose skips.
+            player_bbox = (
+                BBox(x0=float(x1), y0=float(y1), x1=float(x2), y1=float(y2))
+                if t.lost == 0 else None
+            )
             state.players.append(Player(
                 player_id     = tid,
-                bbox          = bbox if t.lost == 0 else None,
+                bbox          = player_bbox,
                 frames_missing= t.lost,
                 colour        = colour,
             ))

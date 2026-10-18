@@ -98,7 +98,7 @@ def main() -> None:
                         help="save one rendered frame to this path, for the report")
     parser.add_argument("--detector", default="",
                         choices=["yolo", "mediapipe", "mog2"],
-                        help="identity detector backend (overrides DETECTOR_MODE in identity.py)")
+                        help="identity detector backend (default: DETECTOR_MODE in identity.py)")
     parser.add_argument("--debug", action="store_true",
                         help="enable module debug overlays (pose skeleton, etc.)")
     args = parser.parse_args()
@@ -109,10 +109,15 @@ def main() -> None:
 
     cap = open_source(args.source, args.width)
     modules, missing = load_modules()
+    identity_loaded = any(m.name == "identity" for m in modules)
     for module in modules:
         if hasattr(module, "debug"):
             module.debug = bool(args.debug)
             print(f"[main] {module.name}.debug = {module.debug}")
+        # Pose must wait for identity boxes — do not show fixed stub crops.
+        if module.name == "pose" and identity_loaded:
+            module.allow_stubs = False
+            print("[main] pose.allow_stubs = False (using identity boxes)")
     renderer = Renderer()
     profiler = Profiler()
 

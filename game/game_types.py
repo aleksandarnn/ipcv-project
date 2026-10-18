@@ -97,8 +97,7 @@ class Player:
     colour: tuple[int, int, int] = (255, 255, 255)   # BGR, for HUD and wands
     health: int = 100
     score: int = 0
-    frames_missing: int = 0                          # 0 means seen this frame
-    bbox: tuple[int, int, int, int] | None = None    # (x1,y1,x2,y2) set by task 3
+    frames_missing: int = 0                          # Task 3: 0 = seen this frame
 
     @property
     def visible(self) -> bool:
