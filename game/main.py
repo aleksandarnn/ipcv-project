@@ -34,10 +34,11 @@ from game_types import BUDGET_MS, GameState, Module          # noqa: E402
 from profiler import Profiler                               # noqa: E402
 from renderer import Renderer                               # noqa: E402
 
-# The four task modules, in the order they must run. Faces first because
-# pose and identity both need them. Control last because it decides things
-# and needs everything else to be up to date.
-TASKS = ("face", "pose", "identity", "control")
+# The four task modules, in the order they must run.
+# Identity runs first: it detects persons and populates state.players with
+# stable player_id and bbox. Face and pose then attach their results to
+# those existing Player objects. Control runs last.
+TASKS = ("identity", "face", "pose", "control")
 
 # How many times a module may throw before we give up on it. The game keeps
 # running without it and the stats panel says so, which is the "controlled
@@ -92,7 +93,14 @@ def main() -> None:
                         help="run N frames with no window, for testing")
     parser.add_argument("--snapshot", default="",
                         help="save one rendered frame to this path, for the report")
+    parser.add_argument("--detector", default="",
+                        choices=["yolo", "mediapipe", "mog2"],
+                        help="identity detector backend (overrides DETECTOR_MODE in identity.py)")
     args = parser.parse_args()
+
+    import os
+    if args.detector:
+        os.environ["IDENTITY_DETECTOR"] = args.detector
 
     cap = open_source(args.source, args.width)
     modules, missing = load_modules()
