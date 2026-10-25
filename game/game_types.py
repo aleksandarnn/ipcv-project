@@ -93,6 +93,10 @@ class Player:
     player_id: int
     face: Face | None = None
     bbox: BBox | None = None                     # Task 3: person crop for pose
+    # Task 2: the padded, smoothed box the keypoints are normalised to. It is
+    # NOT the same as bbox, so use it to turn keypoints back into pixels:
+    #     px = crop.x0 + kp.x * crop.w,  py = crop.y0 + kp.y * crop.h
+    crop: BBox | None = None
     keypoints: dict[str, Keypoint] = field(default_factory=dict)
     colour: tuple[int, int, int] = (255, 255, 255)   # BGR, for HUD and wands
     health: int = 100
