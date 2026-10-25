@@ -44,6 +44,10 @@ class Module(Base):
         self.start_time = time.monotonic()
         self.last_timestamp_ms = -1
 
+        # EMA smoothing parameters
+        self.alpha = 0.5
+        self.smoothed_faces = {}
+
     def process(self, frame, state):
         height, width = frame.shape[:2]
 
@@ -75,7 +79,6 @@ class Module(Base):
             mp_image, timestamp_ms
         )
 
-        # BlazeFace returns detections, not face_landmarks
         for detection in result.detections:
             bbox = detection.bounding_box
 
@@ -98,13 +101,20 @@ class Module(Base):
             face_width = x_max - x_min
             face_height = y_max - y_min
 
-            # BlazeFace keypoints:
-            # 0 = right eye, 1 = left eye
+            # Estimate face rotation using eye keypoints
             keypoints = detection.keypoints
-
             face_angle = 0.0
 
+            if len(keypoints) >= 2:
+                right_eye = keypoints[0]
+                left_eye = keypoints[1]
 
+                dx = (left_eye.x - right_eye.x) * width
+                dy = (left_eye.y - right_eye.y) * height
+
+                face_angle = math.degrees(
+                    math.atan2(dy, dx)
+                )
 
             # Create face information
             face = Face(
@@ -131,10 +141,10 @@ class Module(Base):
 
                 box = player.bbox
 
-                # Check whether the face centre lies inside the player bbox
+                # Check whether face centre lies inside player bbox
                 if box.x0 <= face_cx <= box.x1 and box.y0 <= face_cy <= box.y1:
 
-                    # Estimate the upper-body/head position
+                    # Estimate upper-body/head position
                     target_x = (box.x0 + box.x1) / 2
                     target_y = box.y0 + box.h * 0.2
 
@@ -146,47 +156,47 @@ class Module(Base):
                     if distance < best_distance:
                         best_distance = distance
                         matched_player = player
-                        print("Faces detected:", len(result.detections))
 
-            for player in state.players:
-                print(
-                    "Player ID:", player.player_id,
-                    "Visible:", player.visible,
-                    "BBox:", player.bbox
-                )
-
-            # Store face information in the matched player
+            # Store smoothed face information
             if matched_player is not None:
+                pid = matched_player.player_id
+
+                if pid in self.smoothed_faces:
+                    prev = self.smoothed_faces[pid]
+                    a = self.alpha
+
+                    # EMA smoothing
+                    face = Face(
+                        cx=a * face.cx + (1 - a) * prev.cx,
+                        cy=a * face.cy + (1 - a) * prev.cy,
+                        w=a * face.w + (1 - a) * prev.w,
+                        h=a * face.h + (1 - a) * prev.h,
+                        angle=a * face.angle + (1 - a) * prev.angle,
+                        confidence=face.confidence
+                    )
+
+                self.smoothed_faces[pid] = face
                 matched_player.face = face
 
-                # Temporary debugging
-                print("Face matched to player:", matched_player.player_id)
-
-            if len(keypoints) >= 2:
-                right_eye = keypoints[0]
-                left_eye = keypoints[1]
-
-                dx = (left_eye.x - right_eye.x) * width
-                dy = (left_eye.y - right_eye.y) * height
-
-                face_angle = math.degrees(
-                    math.atan2(dy, dx)
-                )
+                # Use smoothed face geometry for drawing
+                x_min = face.cx - face.w / 2
+                y_min = face.cy - face.h / 2
+                x_max = face.cx + face.w / 2
+                y_max = face.cy + face.h / 2
 
             # Draw face bounding box
             state.draw.append(
                 DrawCommand(
                     kind="rect",
-                    x=x_min,
-                    y=y_min,
-                    x2=x_max,
-                    y2=y_max,
+                    x=int(x_min),
+                    y=int(y_min),
+                    x2=int(x_max),
+                    y2=int(y_max),
                     colour=(0, 255, 0),
                     thickness=2
                 )
             )
 
     def reset(self):
-        # No persistent face tracking state yet
-        pass
+        self.smoothed_faces.clear()
 
