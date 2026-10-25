@@ -6,7 +6,7 @@ import math
 import cv2
 import mediapipe as mp
 
-from game_types import Module as Base, DrawCommand
+from game_types import Module as Base, DrawCommand, Face
 
 
 class Module(Base):
@@ -46,6 +46,9 @@ class Module(Base):
 
     def process(self, frame, state):
         height, width = frame.shape[:2]
+
+        for player in state.players:
+            player.face = None
 
         # OpenCV uses BGR; MediaPipe expects RGB
         rgb_frame = cv2.cvtColor(
@@ -100,6 +103,64 @@ class Module(Base):
             keypoints = detection.keypoints
 
             face_angle = 0.0
+
+
+
+            # Create face information
+            face = Face(
+                cx=face_cx,
+                cy=face_cy,
+                w=face_width,
+                h=face_height,
+                angle=face_angle,
+                confidence=detection.categories[0].score
+            )
+
+            matched_player = None
+            best_distance = float("inf")
+
+            # Find the player corresponding to this face
+            for player in state.players:
+
+                if player.bbox is None or not player.visible:
+                    continue
+
+                # Avoid assigning multiple faces to the same player
+                if player.face is not None:
+                    continue
+
+                box = player.bbox
+
+                # Check whether the face centre lies inside the player bbox
+                if box.x0 <= face_cx <= box.x1 and box.y0 <= face_cy <= box.y1:
+
+                    # Estimate the upper-body/head position
+                    target_x = (box.x0 + box.x1) / 2
+                    target_y = box.y0 + box.h * 0.2
+
+                    distance = (
+                        (face_cx - target_x) ** 2
+                        + (face_cy - target_y) ** 2
+                    )
+
+                    if distance < best_distance:
+                        best_distance = distance
+                        matched_player = player
+                        print("Faces detected:", len(result.detections))
+
+            for player in state.players:
+                print(
+                    "Player ID:", player.player_id,
+                    "Visible:", player.visible,
+                    "BBox:", player.bbox
+                )
+
+            # Store face information in the matched player
+            if matched_player is not None:
+                matched_player.face = face
+
+                # Temporary debugging
+                print("Face matched to player:", matched_player.player_id)
 
             if len(keypoints) >= 2:
                 right_eye = keypoints[0]
