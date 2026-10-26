@@ -32,18 +32,32 @@ screen lists what is still missing. See `game/README.md` for how to add yours.
 
 Each task owner writes the requirements for their own task in `docs/`.
 
-- [Task 5, integration](docs/requirements_task5.md)
-- [Task 3, identity](docs/requirements_task3.md)
 - [Task 1, face](docs/requirements_task1.md)
+- [Task 2, pose](docs/pose_module.md)
+- [Task 3, identity](docs/requirements_task3.md)
 - [Task 4, control](docs/requirements_task4.md)
+- [Task 5, integration](docs/requirements_task5.md)
 
 ## Layout
 
 ```
 game/                the application
-  game_types.py      shared data types every module uses
   main.py            the loop: camera, modules, timing, failure handling
-  renderer.py        scene rendering
+  game_types.py      shared data types every module uses
+  renderer.py        scene rendering and reactions to game events
+  arena.py           the dojo backdrop the webcam picture sits in
   profiler.py        frame rate and latency measurement
-  modules/           one file per task: face.py, pose.py, identity.py, control.py
+  requirements.txt   python libraries needed
+  modules/           one file per task
+    face.py          task 1
+    pose.py          task 2
+    identity.py      task 3
+    control.py       task 4
+  tests/             task 4's unit tests
+docs/                one requirements document per task
+models/              the tracking models the modules load
 ```
+
+Tasks 1 to 4 are each a module in `game/modules/`. Task 5 is not a module,
+it is the application they plug into: `main.py`, `game_types.py`,
+`renderer.py`, `arena.py` and `profiler.py`.
