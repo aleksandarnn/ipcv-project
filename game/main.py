@@ -99,6 +99,9 @@ def main() -> None:
     parser.add_argument("--detector", default="",
                         choices=["yolo", "mediapipe", "mog2"],
                         help="identity detector backend (default: DETECTOR_MODE in identity.py)")
+    parser.add_argument("--no-dual", action="store_true",
+                        help="hide the webcam inset (the peer review video "
+                             "requires input and output both visible)")
     parser.add_argument("--debug", action="store_true",
                         help="enable module debug overlays (pose skeleton, etc.)")
     args = parser.parse_args()
@@ -124,6 +127,7 @@ def main() -> None:
     enabled = {m.name: True for m in modules}
     failures = {m.name: 0 for m in modules}
     show_stats, paused, frame_index = True, False, 0
+    show_dual = not args.no_dual
 
     print("[main] running. q quits, s hides stats, r restarts, 1-4 toggle modules.")
     while True:
@@ -175,6 +179,12 @@ def main() -> None:
         output = renderer.draw(frame, state)
         profiler.record("render", time.perf_counter() - started)
 
+        # The peer review video requires the webcam input and the game
+        # output to be visible at the same time, and the arena replaces the
+        # camera picture, so the raw frame is inset here.
+        if show_dual:
+            output = renderer.dual_view(frame, output)
+
         offline = missing + [name for name, on in enabled.items() if not on]
         if show_stats:
             renderer.stats_panel(output, profiler.lines(), offline)
@@ -198,6 +208,8 @@ def main() -> None:
             break
         elif key == ord("s"):
             show_stats = not show_stats
+        elif key == ord("d"):
+            show_dual = not show_dual
         elif key == ord("p"):
             paused = not paused
         elif key == ord("r"):

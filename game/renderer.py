@@ -62,6 +62,32 @@ class Renderer:
                 self.flash = 0.4
                 self.flash_colour = (60, 60, 255)
 
+    def dual_view(self, raw: np.ndarray, game: np.ndarray,
+                  fraction: float = 0.26) -> np.ndarray:
+        """Put the untouched webcam picture inside the game output.
+
+        The peer review video has one rule I cannot satisfy any other way:
+        "The webcam input and corresponding game output must be visible."
+        The game normally replaces the camera picture, so without this there
+        is only one image on screen and the rule is not met.
+
+        An inset rather than side by side, because side by side halves the
+        game and the reviewers are judging the game.
+        """
+        out = game  # drawn into directly; draw() already returned a fresh array
+        h, w = out.shape[:2]
+        iw = max(80, int(w * fraction))
+        ih = max(60, int(iw * raw.shape[0] / raw.shape[1]))
+        inset = cv2.resize(raw, (iw, ih), interpolation=cv2.INTER_AREA)
+
+        margin = 10
+        x0, y0 = w - iw - margin, h - ih - margin
+        out[y0:y0 + ih, x0:x0 + iw] = inset
+        cv2.rectangle(out, (x0 - 1, y0 - 1), (x0 + iw, y0 + ih),
+                      (235, 235, 240), 1, cv2.LINE_AA)
+        self._text(out, "webcam input", (x0 + 4, y0 - 6), 0.42, (235, 235, 240))
+        return out
+
     def draw(self, frame: np.ndarray, state: GameState) -> np.ndarray:
         # The arena goes down first: the webcam picture inside a dojo.
         out = self.arena.compose(frame)
