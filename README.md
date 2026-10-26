@@ -35,6 +35,7 @@ Each task owner writes the requirements for their own task in `docs/`.
 - [Task 5, integration](docs/requirements_task5.md)
 - [Task 3, identity](docs/requirements_task3.md)
 - [Task 1, face](docs/requirements_task1.md)
+- [Task 4, control](docs/requirements_task4.md)
 
 ## Layout
 

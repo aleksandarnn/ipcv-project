@@ -743,6 +743,12 @@ class Module:
 
             player = self._ensure_player(state, player_id)
             player.keypoints = keypoints
+            # The exact box the keypoints are normalised to (padded and
+            # smoothed, so not identity's bbox). Task 4 needs it for pixels.
+            player.crop = BBox(
+                x0=float(box[0]), y0=float(box[1]),
+                x1=float(box[2]), y1=float(box[3]),
+            )
             # Identity owns bbox / colour / frames_missing. Only fill gaps
             # when running without Task 3 (stub-box path created the player).
             if player.bbox is None:
