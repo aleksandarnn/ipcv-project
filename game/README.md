@@ -27,12 +27,16 @@ module on or off while it runs.
 game_types.py       the shared data types - READ THIS FIRST
 main.py             the loop: camera, modules, timing, failures, rendering
 profiler.py         per-module timing, frame rate, end-to-end latency
+arena.py            task 5: the dojo backdrop the webcam picture sits in
 renderer.py         task 5: draws the scene and reacts to game events
-modules/face.py     task 1, written by its owner
-modules/pose.py     task 2
-modules/identity.py task 3
-modules/control.py  task 4
+modules/identity.py task 3, runs first  (Akash)
+modules/face.py     task 1
+modules/pose.py     task 2             (Valerii)
+modules/control.py  task 4             (Vaishnav, on the task4 branch)
 ```
+
+The pose and identity modules need `mediapipe` and `ultralytics`, plus the
+model files in `models/`. See `requirements.txt`.
 
 ## How to add your module
 
@@ -89,10 +93,36 @@ tell instantly whether a swing landed, was blocked, or missed.
 
 ## Order the modules run in
 
-`face` then `pose` then `identity` then `control`, then the renderer.
+`identity` then `face` then `pose` then `control`, then the renderer.
+This is what `TASKS` in `main.py` actually does.
 
-This is not arbitrary. Identity and pose both need faces to exist first, and
-control needs everything else to be up to date before it decides anything.
+Identity runs first because it finds the people and gives each one a box and
+a stable id. Face and pose both work inside that box. Control runs last,
+because it needs everything else to be up to date before it decides anything.
+
+## Units — read this before you draw anything
+
+Two things in `game_types.py` are easy to get wrong:
+
+- `player.bbox` is a `BBox` in **full-frame pixels**, with `.x0 .y0 .x1 .y1`
+  and `.w .h`.
+- `player.keypoints` are **crop-normalised**: x and y run 0 to 1 across that
+  player's box, not across the screen.
+
+So to put something on a wrist, convert first:
+
+```python
+kp = player.point("right_wrist")
+if kp and player.bbox:
+    x = player.bbox.x0 + kp.x * player.bbox.w
+    y = player.bbox.y0 + kp.y * player.bbox.h
+```
+
+Use the keypoint values straight as pixels and everything you draw lands in
+the top-left corner.
+
+Speed comes from the keypoint itself: `kp.vx`, `kp.vy` and `kp.speed`, in
+crop-widths per second. There is no longer a separate `motion` dictionary.
 
 ## Performance
 

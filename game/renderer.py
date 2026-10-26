@@ -11,6 +11,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from arena import Arena
 from game_types import DrawCommand, GameState
 
 
@@ -18,6 +19,7 @@ class Renderer:
     name = "render"
 
     def __init__(self):
+        self.arena = Arena()
         self.shake = 0.0        # decays every frame
         self.flash = 0.0        # decays every frame
         self.flash_colour = (255, 255, 255)
@@ -61,7 +63,8 @@ class Renderer:
                 self.flash_colour = (60, 60, 255)
 
     def draw(self, frame: np.ndarray, state: GameState) -> np.ndarray:
-        out = frame
+        # The arena goes down first: the webcam picture inside a dojo.
+        out = self.arena.compose(frame)
 
         # Camera shake, done by rolling the image a few pixels. Cheap, and it
         # sells the impact far better than any overlay.
@@ -82,9 +85,46 @@ class Renderer:
         for command in sorted(state.draw, key=lambda c: c.layer):
             self._apply(out, command)
 
+        self.health_bars(out, state)
         if state.message:
             self._banner(out, state.message)
         return out
+
+    # --------------------------------------------------------- the top bar
+    def health_bars(self, img: np.ndarray, state: GameState) -> None:
+        """Two health bars in the beam across the top, fighting-game style.
+
+        Player 1 drains to the left, player 2 to the right, so the gap always
+        opens towards the middle and you can read who is winning at a glance.
+        """
+        height, width = img.shape[:2]
+        bar_h = max(12, int(height * 0.045))
+        top = max(6, int(height * 0.025))
+        margin = int(width * 0.075)
+        bar_w = int(width * 0.34)
+
+        for player in state.players[:2]:
+            left_side = player.player_id == 0
+            x0 = margin if left_side else width - margin - bar_w
+            fraction = max(0.0, min(1.0, player.health / 100.0))
+            filled = int(bar_w * fraction)
+
+            cv2.rectangle(img, (x0, top), (x0 + bar_w, top + bar_h), (20, 18, 18), -1)
+            if filled:
+                # Drain outwards from the centre of the screen.
+                fx0 = x0 + (bar_w - filled) if not left_side else x0
+                cv2.rectangle(img, (fx0, top), (fx0 + filled, top + bar_h),
+                              player.colour, -1)
+            cv2.rectangle(img, (x0, top), (x0 + bar_w, top + bar_h),
+                          (210, 210, 215), 2, cv2.LINE_AA)
+
+            label = f"P{player.player_id + 1}"
+            lx = x0 if left_side else x0 + bar_w - 34
+            self._text(img, label, (lx, top + bar_h + 20), 0.62, player.colour, 2)
+
+        if state.phase == "playing" and len(state.players) >= 2:
+            self._text(img, "VS", (width // 2 - 20, top + bar_h - 4), 0.8,
+                       (235, 235, 240), 2)
 
     # ------------------------------------------------------------ primitives
     @staticmethod
@@ -129,13 +169,21 @@ class Renderer:
 
     # ----------------------------------------------------------------- stats
     def stats_panel(self, img: np.ndarray, lines: list[str], failed: list[str]) -> None:
-        """Performance numbers, top left. Press s to hide during the demo."""
+        """Performance numbers, bottom left. Press s to hide during the demo.
+
+        Bottom rather than top: the health bars own the top of the screen, and
+        up there the panel sat on player one's bar and covered its label.
+        """
         pad, line_h = 8, 18
-        height = line_h * (len(lines) + len(failed)) + pad
-        panel = img[0:height, 0:225]
+        rows = len(lines) + len(failed)
+        height = line_h * rows + pad
+        bottom = img.shape[0] - pad
+        top = max(0, bottom - height)
+
+        panel = img[top:bottom, 0:225]
         panel[:] = (0.35 * panel).astype(panel.dtype)
         for i, line in enumerate(lines):
-            self._text(img, line, (pad, pad + line_h * (i + 1) - 5), 0.45, (230, 230, 230))
+            self._text(img, line, (pad, top + line_h * (i + 1)), 0.45, (230, 230, 230))
         for j, name in enumerate(failed):
-            self._text(img, f"{name} OFFLINE", (pad, pad + line_h * (len(lines) + j + 1) - 5),
-                       0.45, (80, 80, 255))
+            self._text(img, f"{name} OFFLINE",
+                       (pad, top + line_h * (len(lines) + j + 1)), 0.45, (80, 80, 255))
