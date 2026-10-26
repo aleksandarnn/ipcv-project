@@ -21,7 +21,7 @@ My module runs second in the pipeline: identity → **face** → pose → contro
 
 - Face detection on the full frame with MediaPipe BlazeFace (full-range model, for players 1.5–3 m from a laptop webcam).
 - Face position, size and head tilt (from the line between the eyes), plus a rough left/right turn (from the nose position).
-- Matching of each face to a Task 3 player: the face must be inside that player's body box (with some room above it, because the box can start at eye level) and close to where that face was predicted.
+- Matching of each face to a Task 3 player: the face must be inside that player's body box  and close to where that face was predicted.
 - Temporal smoothing against jitter: a Kalman filter for the face centre, an exponential moving average for size and tilt.
 - Controlled behaviour when a face is briefly lost: the Kalman prediction keeps the headband in place for up to 5 frames, then it is removed; it comes back when the face is detected again.
 - The face effect: a cloth headband in the player's colour, drawn in face coordinates so it scales and rotates with the head.
@@ -98,5 +98,6 @@ My effects are only draw commands, the renderer draws them.
 
 ## Failure cases
 
-- No identity box for a player no headband or health bar for that player.
-- Face hidden for more than 5 frames: the headband disappears until the face is seen again.
+- No identity box for a player,no headband or health bar for that player.
+- Face hidden for more than 5 frames: the headband disappears until the face
+is seen again. The 5-frame limit is a design choice.
