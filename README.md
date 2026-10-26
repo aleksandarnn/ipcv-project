@@ -10,7 +10,7 @@ vision: one webcam, two players, no hardware.
 
 | Task | What it covers | Owner |
 |---|---|---|
-| 1 | Face tracking and augmented effects | Shilpa John (s number)|
+| 1 | Face tracking and augmented effects | Shilpa John (s3864693) |
 | 2 | Body pose estimation and motion tracking | Valerii (s number) |
 | 3 | Multiplayer detection and identity tracking | Akash(s3579816) |
 | 4 | Player interaction and game control | Vaishnav (s number) |
@@ -34,6 +34,7 @@ Each task owner writes the requirements for their own task in `docs/`.
 
 - [Task 5, integration](docs/requirements_task5.md)
 - [Task 3, identity](docs/requirements_task3.md)
+- [Task 1, face](docs/requirements_task1.md)
 
 ## Layout
 
