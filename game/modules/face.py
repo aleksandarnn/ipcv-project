@@ -1,3 +1,34 @@
+"""
+Task 1 - Face tracking and Augmented Effects
+Owner: Shilpa John
+
+Pipeline (runs second: identity → face → pose → control → render):
+  raw frame
+    → BlazeFace face detection
+    → Kalman prediction of each face centre
+    → match faces to Task 3 players (body box + distance gate)
+    → Kalman correction, EMA smoothing of size and tilt
+    → short misses bridged for up to 5 frames
+    → headband + HP bar as draw commands
+
+Contract
+--------
+**Input** (via ``state.players``):
+  - ``player_id``, ``player.bbox``, ``frames_missing`` from Task 3
+  - ``player.health`` from Task 4, read from the previous frame's
+    players (control runs after face, so one frame late)
+
+**Output**:
+  - ``player.face`` → ``Face(cx, cy, w, h, angle, confidence)``, only when
+    the face was really detected this frame; otherwise left as ``None``
+  - ``state.draw`` → headband lines/circles (layer 1), HP bar and
+    "P0  85" label (layer 2); the renderer (Task 5) draws them
+
+**Model**: ``models/blaze_face_full_range.tflite`` in the project root.
+
+**Debug**: run ``python main.py --debug`` to also draw the face box
+(green = detected this frame, cyan = predicted).
+"""
 from pathlib import Path
 import time
 import math
