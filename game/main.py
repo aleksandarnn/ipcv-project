@@ -15,7 +15,7 @@
 #   python main.py --width 640          smaller frames, higher frame rate
 #
 # KEYS
-#   q  quit        s  hide/show the stats panel
+#   q  quit        s  hide/show the stats panel    f  fullscreen
 #   r  restart     1  toggle the face module      2  toggle pose
 #   p  pause       3  toggle identity             4  toggle control
 from __future__ import annotations
@@ -44,6 +44,8 @@ TASKS = ("identity", "face", "pose", "control")
 # running without it and the stats panel says so, which is the "controlled
 # behaviour during module failure" the brief asks for.
 MAX_FAILURES = 5
+
+WINDOW = "IPCV project"
 
 
 def load_modules() -> tuple[list[Module], list[str]]:
@@ -99,6 +101,8 @@ def main() -> None:
     parser.add_argument("--detector", default="",
                         choices=["yolo", "mediapipe", "mog2"],
                         help="identity detector backend (default: DETECTOR_MODE in identity.py)")
+    parser.add_argument("--fullscreen", action="store_true",
+                        help="start filling the screen (f toggles it too)")
     parser.add_argument("--no-dual", action="store_true",
                         help="hide the webcam inset (the peer review video "
                              "requires input and output both visible)")
@@ -128,6 +132,7 @@ def main() -> None:
     failures = {m.name: 0 for m in modules}
     show_stats, paused, frame_index = True, False, 0
     show_dual = not args.no_dual
+    window_ready, fullscreen = False, args.fullscreen
 
     print("[main] running. q quits, s hides stats, r restarts, 1-4 toggle modules.")
     while True:
@@ -202,7 +207,18 @@ def main() -> None:
                 break
             continue
 
-        cv2.imshow("IPCV project", output)
+        # A resizable window, so the picture can fill the screen while the
+        # processing stays at --width. Scaling up for display is nearly free;
+        # processing at full screen size would not be.
+        if not window_ready:
+            cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(WINDOW, output.shape[1] * 2, output.shape[0] * 2)
+            if args.fullscreen:
+                cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN,
+                                      cv2.WINDOW_FULLSCREEN)
+            window_ready = True
+
+        cv2.imshow(WINDOW, output)
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
@@ -210,6 +226,11 @@ def main() -> None:
             show_stats = not show_stats
         elif key == ord("d"):
             show_dual = not show_dual
+        elif key == ord("f"):
+            fullscreen = not fullscreen
+            cv2.setWindowProperty(
+                WINDOW, cv2.WND_PROP_FULLSCREEN,
+                cv2.WINDOW_FULLSCREEN if fullscreen else cv2.WINDOW_NORMAL)
         elif key == ord("p"):
             paused = not paused
         elif key == ord("r"):
