@@ -76,15 +76,29 @@ def load_modules() -> tuple[list[Module], list[str]]:
 
 
 def open_source(source: str, width: int):
-    cap = cv2.VideoCapture(int(source) if source.isdigit() else source)
-    if not cap.isOpened():
-        raise SystemExit(f"Could not open the video source: {source}")
-    if source.isdigit():
-        # Ask the camera for a small frame. Asking is cheaper than resizing
-        # afterwards, because the camera does it before we ever see the data.
+    if not source.isdigit():
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            raise SystemExit(f"Could not open the video source: {source}")
+        return cap
+
+    # On Windows the default backend ignores the size request and always hands
+    # back 640x480, which is 4:3 and leaves bars down the sides of a widescreen
+    # laptop. DirectShow honours it, so the camera gives 16:9 directly.
+    for backend in (cv2.CAP_DSHOW, cv2.CAP_ANY):
+        cap = cv2.VideoCapture(int(source), backend)
+        if not cap.isOpened():
+            continue
+        # Asking the camera for the size is cheaper than resizing afterwards,
+        # because it happens before the data ever reaches us.
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(width * 9 / 16))
-    return cap
+        ok, probe = cap.read()
+        if ok:
+            print(f"[main] camera {source} at {probe.shape[1]}x{probe.shape[0]}")
+            return cap
+        cap.release()
+    raise SystemExit(f"Could not open the video source: {source}")
 
 
 def main() -> None:
