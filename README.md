@@ -38,7 +38,6 @@ Each task owner writes the requirements for their own task in `docs/`.
 - [Task 4, control](docs/requirements_task4.md)
 - [Task 5, integration](docs/requirements_task5.md)
 - [Task 5, measurement protocol](docs/task5_measurements.md)
-- [Task 5, report section draft](docs/task5_report_draft.md)
 
 ## Layout
 
