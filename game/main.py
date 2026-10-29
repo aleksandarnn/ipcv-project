@@ -30,6 +30,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# Taken before the modules are imported, so the model loading counts. The
+# report asks how long the system needs from launch to being playable.
+LAUNCHED_AT = time.perf_counter()
+
 from game_types import BUDGET_MS, GameState, Module          # noqa: E402
 from profiler import Profiler                               # noqa: E402
 from renderer import Renderer                               # noqa: E402
@@ -82,10 +86,12 @@ def open_source(source: str, width: int):
             raise SystemExit(f"Could not open the video source: {source}")
         return cap
 
-    # On Windows the default backend ignores the size request and always hands
-    # back 640x480, which is 4:3 and leaves bars down the sides of a widescreen
-    # laptop. DirectShow honours it, so the camera gives 16:9 directly.
-    for backend in (cv2.CAP_DSHOW, cv2.CAP_ANY):
+    # Media Foundation first. Measured on this laptop, both backends honour a
+    # 16:9 request at 640, 960 and 1280 wide, but DirectShow only delivers
+    # about 10 frames a second against Media Foundation's 30, because it hands
+    # over uncompressed YUY2. DirectShow stays as a fallback for machines
+    # where Media Foundation refuses the camera.
+    for backend in (cv2.CAP_MSMF, cv2.CAP_DSHOW, cv2.CAP_ANY):
         cap = cv2.VideoCapture(int(source), backend)
         if not cap.isOpened():
             continue
@@ -147,6 +153,7 @@ def main() -> None:
     show_stats, paused, frame_index = True, False, 0
     show_dual = not args.no_dual
     window_ready, fullscreen = False, args.fullscreen
+    bootstrap = 0.0
 
     print("[main] running. q quits, s hides stats, r restarts, 1-4 toggle modules.")
     while True:
@@ -154,6 +161,10 @@ def main() -> None:
         grabbed_at = time.perf_counter()
 
         ok, frame = cap.read()
+        # Timed like a module, because it behaves like one. In dim light the
+        # camera lengthens its exposure and hands frames over more slowly, and
+        # then the grab, not the processing, is what limits the frame rate.
+        profiler.record("capture", time.perf_counter() - grabbed_at)
         if not ok:
             if args.source.isdigit():
                 break
@@ -233,6 +244,9 @@ def main() -> None:
             window_ready = True
 
         cv2.imshow(WINDOW, output)
+        if not bootstrap:
+            bootstrap = time.perf_counter() - LAUNCHED_AT
+            print(f"[main] playable after {bootstrap:.1f} s")
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
@@ -261,7 +275,7 @@ def main() -> None:
     cv2.destroyAllWindows()
     print()
     print("PERFORMANCE SUMMARY")
-    print(profiler.report())
+    print(profiler.report(bootstrap))
 
 
 if __name__ == "__main__":
