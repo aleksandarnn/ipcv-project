@@ -134,12 +134,33 @@ def test_guard_blocks_vertical_cut():
     sim = Sim()
     sim.start_round()
     guard = body(440, guard=True)
-    sim.idle(0.2, p1=guard)
+    sim.idle(control.GUARD_ON_S + 0.1, p1=guard)
     assert sim.count("block", 1) > 0
     sim.swing("vertical", p1=guard)
     assert sim.count("blocked", 1) == 1, sim.events
     assert sim.count("damage") == 0
     assert sim.ctl.fighters[1].health == control.MAX_HEALTH
+
+
+def test_guard_raised_after_the_swing_still_blocks():
+    # Confirming a guard takes longer than the reaction window, so crossing
+    # the arms in time must be enough to block.
+    sim = Sim()
+    sim.start_round()
+    sim.swing("vertical", p1=body(440), p1_after=body(440, guard=True))
+    assert sim.count("blocked", 1) == 1, sim.events
+    assert sim.count("damage") == 0
+
+
+def test_arms_crossed_off_to_one_side_are_not_a_guard():
+    # Winding up a cut can cross the wrists beside the body, not in front of it.
+    sim = Sim()
+    sim.start_round()
+    wind_up = body(440, guard=True)
+    for name in ("left_wrist", "right_wrist"):
+        wind_up[name].x += 1.0 * SW
+    sim.idle(control.GUARD_ON_S + 0.3, p1=wind_up)
+    assert sim.count("block", 1) == 0, sim.events
 
 
 def test_duck_dodges_horizontal_cut():
@@ -199,7 +220,7 @@ def test_effects_are_drawn_on_the_players():
     lines = [c for c in state.draw if c.kind == "line"]
     circles = [c for c in state.draw if c.kind == "circle"]
     assert lines, "katana missing"
-    sim.idle(0.2, p1=body(440, guard=True))
+    sim.idle(control.GUARD_ON_S + 0.1, p1=body(440, guard=True))
     state = sim.step(p1=body(440, guard=True))
     assert any(c.kind == "circle" and abs(c.x - 440) < SW for c in state.draw), \
         "guard shield not on player 1"

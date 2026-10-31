@@ -26,9 +26,14 @@ their shoulder width shrinks, so the scale also uses torso length.
 | Action | Rule | Event |
 |---|---|---|
 | Attack | A wrist moves faster than 4 shoulder widths/s **relative to the shoulders**, away from the body, at least 0.7 widths from the chest. Cooldown 0.7 s. Not possible while guarding or within 0.3 s of dropping the guard. | `attack`, strength 0.3–1.0 from speed |
-| Guard | Wrists crossed (their left/right order is opposite to the shoulders'), at chest height, close together. Has to hold for 3 frames to start and 3 frames to drop. | `block`, every frame while held |
+| Guard | Wrists crossed (their left/right order is opposite to the shoulders'), at chest height, close together, and in front of the body's middle (within 0.6 widths). Has to hold for 0.4 s to start and 0.2 s to drop. Arms already crossed in time also block a swing before the guard is confirmed. | `block`, every frame while held |
 | Duck | Shoulders drop 0.45 widths below the player's own standing height, which is learned while they stand | `dodge`, once when it starts |
-| Sidestep | Torso moves 0.8 widths sideways within 0.3 s | `dodge`, once when it starts |
+| Sidestep | Torso moves 0.5 widths sideways within 0.5 s | `dodge`, once when it starts |
+
+The guard hold time and the sidestep limits were changed after the live
+measurement: at about 9 fps a cut's wind-up crossed the arms long enough to
+count as a guard (3 frames), and real quick sidesteps only moved 0.2-0.5
+widths within 0.3 s.
 
 Wrist speed is measured relative to the shoulders. Walking or ducking moves
 the whole body, and that must not count as a swing. The "away from the body"

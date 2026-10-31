@@ -70,13 +70,17 @@ RESOLVE_DELAY_S = 0.35      # time the defender has to react to a swing
 DEFENCE_EARLY_S = 0.20      # a defence started this long before the swing counts
 CLASH_WINDOW_S = 0.15       # two swings this close together cancel each other
 
-GUARD_ON_FRAMES = 3         # crossed arms needed for this many frames to guard
-GUARD_OFF_FRAMES = 3        # and uncrossed this many to drop the guard
+# Seconds, not frames: live play runs at about 9 fps, where 3 frames is 0.33 s
+# and a cut's wind-up, which crosses the arms for a moment, already counted.
+GUARD_ON_S = 0.4            # crossed arms held this long to raise the guard
+GUARD_OFF_S = 0.2           # and uncrossed this long to drop it
+GUARD_CENTRE = 0.6          # wrists cross within this of the body's middle line
 GUARD_RELEASE_S = 0.3       # no attack this soon after the guard drops: dropping
                             # the arms fast looks just like a swing
 DUCK_DROP = 0.45            # shoulders below standing height by this much
-STEP_SHIFT = 0.8            # torso moved sideways this much ...
-STEP_WINDOW_S = 0.30        # ... within this long
+# Measured live, a quick sidestep moved the shoulders 0.2-0.5 widths in 0.3 s.
+STEP_SHIFT = 0.5            # torso moved sideways this much ...
+STEP_WINDOW_S = 0.50        # ... within this long
 DODGE_REPEAT_S = 0.40       # at most one dodge event this often
 BASELINE_TAU_S = 2.0        # how fast standing height adapts while standing
 BASELINE_TAU_DUCK_S = 6.0   # and while ducking, so nobody can camp in a duck
@@ -130,7 +134,8 @@ class Fighter:
     identity_first_t: float | None = None
 
     guard: bool = False
-    guard_streak: int = 0                   # frames the raw signal disagreed
+    guard_since: float | None = None        # when the raw signal began to disagree
+    crossing: bool = False                  # arms crossed this frame, guard or not yet
     ducking: bool = False
     dodging: bool = False                   # ducking or mid-sidestep, last frame
     last_guard_t: float = NEVER
@@ -156,7 +161,8 @@ class Fighter:
             hist.clear()
         self.torso.clear()
         self.last_t = None
-        self.guard, self.guard_streak, self.ducking, self.dodging = False, 0, False, False
+        self.guard, self.guard_since, self.ducking, self.dodging = False, None, False, False
+        self.crossing = False
         # Size and standing height belong to a body. After a gap it may be a
         # different body, so learn them again rather than see a "duck".
         self.scale, self.baseline_y = 0.0, None
@@ -348,15 +354,19 @@ class Module(Base):
             crossed = (rw.x - lw.x) * (rs.x - ls.x) < 0
             chest = all(ty - 0.5 * s < w.y < ty + 1.6 * s for w in (lw, rw))
             close = math.hypot(lw.x - rw.x, lw.y - rw.y) < 1.2 * s
-            raw_guard = crossed and chest and close
+            # a guard is in front of the body; a wind-up crosses off to one side
+            centred = abs((lw.x + rw.x) / 2 - tx) < GUARD_CENTRE * s
+            raw_guard = crossed and chest and close and centred
+        f.crossing = raw_guard
         guard_raised = False
         if raw_guard != f.guard:
-            f.guard_streak += 1
-            if f.guard_streak >= (GUARD_ON_FRAMES if raw_guard else GUARD_OFF_FRAMES):
-                f.guard, f.guard_streak = raw_guard, 0
+            if f.guard_since is None:
+                f.guard_since = t
+            if t - f.guard_since >= (GUARD_ON_S if raw_guard else GUARD_OFF_S):
+                f.guard, f.guard_since = raw_guard, None
                 guard_raised = raw_guard
         else:
-            f.guard_streak = 0
+            f.guard_since = None
         if f.guard:
             f.last_guard_t = t
             if emit:
@@ -472,7 +482,9 @@ class Module(Base):
             works = DEFENCES[atk.direction]
             s = defender.scale or 50.0
             chest = (defender.tx, defender.ty + 0.5 * s)
-            if "guard" in works and defender.last_guard_t >= since:
+            # The guard takes GUARD_ON_S to confirm, longer than the defender has
+            # to react, so arms already crossed in front of the chest also count.
+            if "guard" in works and (defender.last_guard_t >= since or defender.crossing):
                 self._emit(state, "blocked", atk.defender, atk.strength)
                 self._effect("spark", t, 0.35, *chest, 1.3 * s, SPARK)
                 self._effect("text", t, 0.8, chest[0], chest[1] - 2.4 * s, s,
