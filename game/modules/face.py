@@ -44,7 +44,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-from game_types import Module as Base, DrawCommand, Face
+from game_types import Module as Base, DrawCommand, Face, player_label
 
 # BlazeFace is used for face detection. Its bounding box and keypoints
 # provide the position, size and approximate rotation needed for the headband.
@@ -441,7 +441,7 @@ class Module(Base):
             r = sum(raw) / len(raw)
             f = sum(filt) / len(filt)
             less = 100.0 * (1 - f / r) if r > 0 else 0.0
-            print(f"   P{pid}: raw {r:.2f} px, filtered {f:.2f} px "
+            print(f"   {player_label(pid)}: raw {r:.2f} px, filtered {f:.2f} px "
                   f"({less:.0f} % less, {len(raw)} frames)")
         print("dynamic jitter, change of movement per frame (valid while moving):")
         for pid in sorted(self.shake_raw):
@@ -450,13 +450,13 @@ class Module(Base):
             r = sum(raw) / len(raw)
             f = sum(filt) / len(filt)
             less = 100.0 * (1 - f / r) if r > 0 else 0.0
-            print(f"   P{pid}: raw {r:.2f} px, filtered {f:.2f} px "
+            print(f"   {player_label(pid)}: raw {r:.2f} px, filtered {f:.2f} px "
                   f"({less:.0f} % less, {len(raw)} frames)")
         print("alignment error, detected face centre vs drawn effect centre:")
         for pid in sorted(self.align_px):
             px = self.align_px[pid]
             fw = self.align_fw.get(pid) or [0.0]
-            print(f"   P{pid}: mean {sum(px) / len(px):.2f} px "
+            print(f"   {player_label(pid)}: mean {sum(px) / len(px):.2f} px "
                   f"({sum(fw) / len(fw):.3f} face widths), "
                   f"max {max(px):.1f} px, {len(px)} frames")
 
@@ -703,7 +703,7 @@ class Module(Base):
             text_x = x1 + 6 if x1 + 80 < width else x0 - 80
         state.draw.append(DrawCommand(
             kind="text", x=text_x, y=text_y,
-            text=f"P{pid}  {int(round(hp))}",
+            text=f"{player_label(pid)}  {int(round(hp))}",
             colour=(255, 255, 255), thickness=1, scale=scale, layer=2))
 
     def draw_headband(self, pid, state, t):

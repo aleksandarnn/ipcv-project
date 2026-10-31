@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from arena import Arena
-from game_types import DrawCommand, GameState
+from game_types import DrawCommand, GameState, player_label
 
 
 class Renderer:
@@ -146,7 +146,7 @@ class Renderer:
             cv2.rectangle(img, (x0, top), (x0 + bar_w, top + bar_h),
                           (210, 210, 215), 2, cv2.LINE_AA)
 
-            label = f"P{player.player_id + 1}"
+            label = player_label(player.player_id)
             lx = x0 if left_side else x0 + bar_w - 34
             self._text(img, label, (lx, top + bar_h + 20), 0.62, player.colour, 2)
 

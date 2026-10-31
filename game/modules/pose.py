@@ -33,7 +33,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-from game_types import BBox, Keypoint, Player
+from game_types import BBox, Keypoint, Player, player_label
 
 # ---------------------------------------------------------------------------
 # Landmark maps / debug skeleton
@@ -1551,7 +1551,7 @@ class Module:
             colour = BOX_COLOURS.get(player_id, (255, 255, 255))
             cv2.rectangle(frame, (x0, y0), (x1, y1), colour, 2, cv2.LINE_AA)
             track = self._tracks.get(player_id)
-            tag = f"P{player_id}"
+            tag = player_label(player_id)
             if track is not None:
                 if not track.acquired and track.good_streak > 0:
                     tag += f" lock {track.good_streak}/{REACQUIRE_FRAMES}"

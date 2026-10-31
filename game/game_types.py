@@ -240,6 +240,11 @@ class GameState:
         return None
 
 
+def player_label(player_id: int) -> str:
+    """Canonical display name for a player: player_id=0 → 'P1', 1 → 'P2'."""
+    return f"P{player_id + 1}"
+
+
 class Module:
     """What every task module must look like.
 

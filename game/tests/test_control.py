@@ -258,7 +258,7 @@ def test_lost_player_is_frozen_and_cannot_be_hit():
     sim = Sim()
     sim.start_round()
     state = sim.idle(0.4, missing=(0, control.FREEZE_AFTER + 1))
-    assert "P1 LOST" in state.message
+    assert "P2 LOST" in state.message
     sim.swing("horizontal")
     assert sim.count("damage") == 0
     # After coming back there is a grace period, then they can be hit again.
@@ -276,7 +276,7 @@ def test_knockout_ends_round_and_next_round_restores_health():
     assert sim.ctl.phase == "over"
     assert sim.ctl.fighters[0].rounds == 1
     state = sim.step()
-    assert state.message == "P0 WINS ROUND 1" and state.players[0].score == 1
+    assert state.message == "P1 WINS ROUND 1" and state.players[0].score == 1
     sim.idle(control.ROUND_OVER_S)
     sim.start_round()
     assert sim.ctl.fighters[1].health == control.MAX_HEALTH

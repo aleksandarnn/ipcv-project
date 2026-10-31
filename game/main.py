@@ -135,6 +135,8 @@ def main() -> None:
     import os
     if args.detector:
         os.environ["IDENTITY_DETECTOR"] = args.detector
+    if args.metrics:
+        os.environ["IDENTITY_METRICS"] = "1"
 
     cap = open_source(args.source, args.width)
     modules, missing = load_modules()

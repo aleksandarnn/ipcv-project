@@ -42,13 +42,14 @@ import os
 from collections import deque
 from dataclasses import dataclass, field, replace
 
-from game_types import EVENTS, DrawCommand, GameEvent, GameState, Keypoint, Player
+from game_types import EVENTS, DrawCommand, GameEvent, GameState, Keypoint, Player, player_label
 from game_types import Module as Base
 
 # ------------------------------------------------------------------ tuning
 # Body-relative units: 1.0 = one shoulder width. Times are in seconds.
 FREEZE_AFTER = 5            # frames_missing above this freezes a player (task 3)
 RETURN_GRACE_S = 1.0        # after coming back: cannot attack or be hit
+POSE_FALLBACK_S = 3.0       # identity seen this long without pose → allow round start
 REACQUIRE_GRACE_S = 0.5     # after any tracking gap or body jump: cannot attack
 TELEPORT_SHIFT = 1.0        # torso moving this far in one frame is not a person
                             # moving, it is identity handing us another body
@@ -122,6 +123,11 @@ class Fighter:
     torso: deque = field(default_factory=lambda: deque(maxlen=30))   # (t, x, y)
     baseline_y: float | None = None         # standing shoulder height
     last_t: float | None = None
+    # Time when identity first continuously confirmed this player.
+    # Reset when the player goes missing. Used as a fallback: if identity
+    # has tracked them for ≥ POSE_FALLBACK_S without pose finding shoulders,
+    # allow the round to start so a pose failure does not block the game.
+    identity_first_t: float | None = None
 
     guard: bool = False
     guard_streak: int = 0                   # frames the raw signal disagreed
@@ -253,6 +259,11 @@ class Module(Base):
             elif not lost and fighter.frozen:
                 fighter.frozen = False
                 fighter.active_from = t + RETURN_GRACE_S
+            if player.frames_missing == 0:
+                if fighter.identity_first_t is None:
+                    fighter.identity_first_t = t
+            else:
+                fighter.identity_first_t = None  # reset on any gap
             # Even a short gap can hide an identity swap (two players crossing),
             # so whoever comes back starts with a clean history.
             if player.frames_missing > 0:
@@ -504,8 +515,20 @@ class Module(Base):
     def _update_round(self, state: GameState, t: float) -> None:
         # Ready = identity tracks them AND pose has seen their body lately.
         # A box with no skeleton in it cannot fight, so do not start a round.
-        ready = [f for f in self.fighters.values()
-                 if not f.frozen and f.last_t is not None and t - f.last_t < 1.0]
+        def _is_ready(f: Fighter) -> bool:
+            if f.frozen:
+                return False
+            # Normal path: pose confirmed this player's skeleton recently.
+            if f.last_t is not None and t - f.last_t < 1.0:
+                return True
+            # Fallback: identity has been continuously tracking this player for
+            # ≥ POSE_FALLBACK_S without pose finding their skeleton. Prevents
+            # the game from being permanently blocked if pose is slow/failing.
+            if (f.identity_first_t is not None
+                    and t - f.identity_first_t >= POSE_FALLBACK_S):
+                return True
+            return False
+        ready = [f for f in self.fighters.values() if _is_ready(f)]
         two_ready = len(ready) >= 2
         elapsed = t - self.phase_t
 
@@ -538,14 +561,14 @@ class Module(Base):
             state.phase = "playing"
             lost = [f.player_id for f in self.fighters.values() if f.frozen]
             if lost:
-                state.message = f"P{lost[0]} LOST - STEP BACK IN"
+                state.message = f"{player_label(lost[0])} LOST - STEP BACK IN"
             elif elapsed < FIGHT_MESSAGE_S:
                 state.message = "FIGHT!"
             return
 
         if self.phase == "over":
             state.phase = "over"
-            state.message = f"P{self.winner} WINS ROUND {self.round}"
+            state.message = f"{player_label(self.winner)} WINS ROUND {self.round}"
             if elapsed >= ROUND_OVER_S:
                 self._set_phase("countdown" if two_ready else "waiting", t)
 
@@ -570,7 +593,7 @@ class Module(Base):
                                  colour=_health_colour(f.health), thickness=-1, layer=2))
             draw(DrawCommand("rect", x0, y, x0 + bar_w, y + bar_h,
                              colour=colour, thickness=1, layer=2))
-            label = f"P{pid}  {f.health}  wins {f.rounds}"
+            label = f"{player_label(pid)}  {f.health}  wins {f.rounds}"
             if f.frozen:
                 label += "  LOST"
             draw(DrawCommand("text", x0, y + bar_h + 16, text=label,

@@ -24,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 import cv2
 
-from game_types import BBox, DrawCommand, GameEvent, GameState, Module as Base, Player
+from game_types import BBox, DrawCommand, GameEvent, GameState, Module as Base, Player, player_label
 
 # ── Detector selection ───────────────────────────────────────────────────────
 # Change this to compare detection backends:
@@ -424,10 +424,126 @@ class Module(Base):
         self._frame_idx = 0
         # MOG2 runs every frame (it IS the tracking, not just detection)
         self._always_detect = (self.detector._mode == "mog2")
+        self._reset_metrics()
+
+    def _reset_metrics(self) -> None:
+        self._m_frames        = 0   # total process() calls
+        self._m_detect_calls  = 0   # times detector actually ran
+        self._m_player_frames: dict[int, int] = {}   # frames each pid was present (lost==0)
+        self._m_lost_frames:   dict[int, int] = {}   # frames each pid was lost (lost>0)
+        # SORT: re-entry (successful histogram match on re-appearance)
+        self._m_reentry       = 0
+        # SORT: ID switches — re-entry attempted but histogram match failed → new ID
+        self._m_id_switches   = 0
+        # SORT: track fragments — each time a present track goes lost (gap opens)
+        self._m_fragments: dict[int, int] = {}
+        # MOTP proxy: centroid jitter — Welford online variance of cx,cy per pid
+        # stored as {pid: [n, mean_x, M2_x, mean_y, M2_y]}
+        self._m_jitter: dict[int, list] = {}
+        # Re-ID time: frame when each pid went lost → compute gap on return
+        self._m_lost_at: dict[int, int] = {}
+        # Re-ID time samples (frames from lost to returned), per pid
+        self._m_reid_times: dict[int, list] = {}
+        # HopTrack: track continuity (AssA proxy)
+        # consecutive present-frames in the current run, per pid
+        self._m_current_run: dict[int, int] = {}
+        # completed run lengths per pid (recorded when a gap opens)
+        self._m_run_lengths: dict[int, list] = {}
+        # HopTrack: simultaneous detection — frames where both P0 and P1 present
+        self._m_both_present = 0
+
+    def _print_metrics(self) -> None:
+        import os
+        if os.environ.get("IDENTITY_METRICS") != "1":
+            return
+        mode = self.detector._mode
+        total = self._m_frames
+        if total == 0:
+            return
+        print()
+        print(f"── identity metrics ({mode}) ──────────────────────────────")
+        print(f"  total frames      : {total}")
+        print(f"  detector calls    : {self._m_detect_calls}  "
+              f"(1 every {total/max(1,self._m_detect_calls):.1f} frames)")
+        print()
+        all_pids = sorted(
+            set(self._m_player_frames) | set(self._m_lost_frames)
+        )
+        for pid in all_pids:
+            pf = self._m_player_frames.get(pid, 0)
+            lf = self._m_lost_frames.get(pid, 0)
+            tracked = pf + lf
+            if tracked == 0:
+                continue
+            rate = 100.0 * pf / tracked
+            frags = self._m_fragments.get(pid, 0)
+            print(f"  {player_label(pid)} detection rate  : {rate:.1f}%  "
+                  f"({pf} present / {lf} lost / {tracked} total)")
+            print(f"  {player_label(pid)} fragments (SORT): {frags}  "
+                  f"(gaps opened in the track)")
+            j = self._m_jitter.get(pid)
+            if j and j[0] >= 2:
+                std_x = (j[2] / j[0]) ** 0.5
+                std_y = (j[4] / j[0]) ** 0.5
+                jitter_px = (std_x**2 + std_y**2) ** 0.5
+                print(f"  {player_label(pid)} centroid jitter : {jitter_px:.1f} px RMS  "
+                      f"(MOTP proxy, still-player)")
+        for pid in all_pids:
+            times = self._m_reid_times.get(pid, [])
+            if times:
+                mean_t = sum(times) / len(times)
+                worst  = max(times)
+                print(f"  {player_label(pid)} Re-ID time     : mean {mean_t:.1f} frames, "
+                      f"worst {worst} frames  (over {len(times)} exit-return trials)")
+
+        # ── HopTrack metrics ────────────────────────────────────────────────
+        print()
+        print("  [HopTrack]")
+        for pid in all_pids:
+            # flush any still-open run (player present when game ended)
+            runs = list(self._m_run_lengths.get(pid, []))
+            open_run = self._m_current_run.get(pid, 0)
+            if open_run > 0:
+                runs.append(open_run)
+            if runs:
+                mean_run = sum(runs) / len(runs)
+                worst_run = max(runs)
+                print(f"  {player_label(pid)} track continuity: mean {mean_run:.1f} frames, "
+                      f"longest {worst_run} frames  (AssA proxy — higher = more stable)")
+        total_tracked = max(
+            self._m_player_frames.get(0, 0) + self._m_lost_frames.get(0, 0),
+            self._m_player_frames.get(1, 0) + self._m_lost_frames.get(1, 0),
+            1,
+        )
+        simul_rate = 100.0 * self._m_both_present / total
+        print(f"  simultaneous det. : {simul_rate:.1f}%  "
+              f"({self._m_both_present}/{total} frames both P0+P1 present)")
+        hop_attempts = self._m_reentry + self._m_id_switches
+        hop_rate = 100.0 * hop_attempts / max(total, 1)
+        print(f"  hop attempt rate  : {hop_rate:.1f}%  "
+              f"({hop_attempts} re-associations over {total} frames)")
+
+        print()
+        print(f"  ID switches (SORT): {self._m_id_switches}  "
+              f"(re-entry failed → new ID assigned)")
+        print(f"  re-entry matches  : {self._m_reentry}  "
+              f"(IDF1 proxy — same ID recovered on re-appearance)")
+        if self._m_reentry + self._m_id_switches > 0:
+            idf1_proxy = 100.0 * self._m_reentry / (
+                self._m_reentry + self._m_id_switches
+            )
+            print(f"  IDF1 proxy        : {idf1_proxy:.1f}%  "
+                  f"(re-entry accuracy; 100% = no identity loss)")
+        print("────────────────────────────────────────────────────────────")
 
     def reset(self) -> None:
+        self._print_metrics()
         self.tracks     = {}
         self._frame_idx = 0
+        self._reset_metrics()
+
+    def __del__(self) -> None:
+        self._print_metrics()
 
     # ── entry point ──────────────────────────────────────────────────────────
 
@@ -451,6 +567,8 @@ class Module(Base):
             # Keep only the two largest bounding boxes
             raw.sort(key=lambda b: (b[2]-b[0]) * (b[3]-b[1]), reverse=True)
             detections = [_clamp(b, h, w) for b in raw[:2]]
+            self._m_detect_calls += 1
+        self._m_frames += 1
 
         # 3. First initialisation — assign leftmost → P0, rightmost → P1
         if not self.tracks:
@@ -489,7 +607,19 @@ class Module(Base):
                 self.tracks[tid].lost += 1
 
             for did in unmatched_det:
-                self._try_reenter(detections[did], frame)
+                if not self._try_reenter(detections[did], frame):
+                    # Not a re-entry of a lost player — could be a genuinely new
+                    # second player arriving after the game started.
+                    active_ids = {
+                        tid for tid, t in self.tracks.items()
+                        if t.lost < MAX_LOST
+                    }
+                    for new_pid in range(2):
+                        if new_pid not in active_ids:
+                            t = _KalmanTrack(detections[did], new_pid)
+                            t.hist = _hsv_hist(frame, detections[did])
+                            self.tracks[new_pid] = t
+                            break
 
         elif run_detect:
             # Detector ran but found nobody — all tracks are truly missing
@@ -589,11 +719,12 @@ class Module(Base):
 
     # ── re-entry ──────────────────────────────────────────────────────────────
 
-    def _try_reenter(self, bbox: tuple, frame: np.ndarray) -> None:
+    def _try_reenter(self, bbox: tuple, frame: np.ndarray) -> bool:
         """
         A detection was not matched to any active track.
-        Compare its histogram against tracks that have been lost for a while —
-        if it looks like the same player, reassign the identity.
+        Compare its histogram against tracks that have been lost for a while.
+        Returns True if the detection was consumed (matched to a lost track),
+        False if no lost track matched (caller should treat it as a new player).
         """
         cand_hist = _hsv_hist(frame, bbox)
         best_sim, best_tid = -1.0, -1
@@ -611,6 +742,15 @@ class Module(Base):
                 (1 - HIST_ALPHA) * self.tracks[best_tid].hist
                 + HIST_ALPHA * new_hist
             )
+            self._m_reentry += 1
+            return True
+        else:
+            # Histogram match failed against all lost tracks.
+            # If there were lost tracks to compare against, this is an ID switch
+            # (SORT metric) — the player's appearance changed enough to lose them.
+            if any(t.lost >= 5 for t in self.tracks.values()):
+                self._m_id_switches += 1
+            return False
 
     # ── events ────────────────────────────────────────────────────────────────
 
@@ -620,10 +760,22 @@ class Module(Base):
                 state.events.append(
                     GameEvent(kind="player_lost", player_id=t.player_id)
                 )
+                # SORT fragmentation: each gap opening = one fragment
+                pid = t.player_id
+                self._m_fragments[pid] = self._m_fragments.get(pid, 0) + 1
+                self._m_lost_at[pid] = self._m_frames
+                # HopTrack AssA proxy: close the current continuous run
+                run = self._m_current_run.pop(pid, 0)
+                if run > 0:
+                    self._m_run_lengths.setdefault(pid, []).append(run)
             if t.just_returned:
                 state.events.append(
                     GameEvent(kind="player_returned", player_id=t.player_id)
                 )
+                pid = t.player_id
+                if pid in self._m_lost_at:
+                    gap = self._m_frames - self._m_lost_at.pop(pid)
+                    self._m_reid_times.setdefault(pid, []).append(gap)
 
     # ── write state ───────────────────────────────────────────────────────────
 
@@ -656,6 +808,21 @@ class Module(Base):
                 frames_missing= t.lost,
                 colour        = colour,
             ))
+            if t.lost == 0:
+                self._m_player_frames[tid] = self._m_player_frames.get(tid, 0) + 1
+                # HopTrack AssA proxy: extend current continuous run
+                self._m_current_run[tid] = self._m_current_run.get(tid, 0) + 1
+                # Welford online variance for centroid jitter (MOTP proxy)
+                cx = (x1 + x2) / 2.0
+                cy = (y1 + y2) / 2.0
+                if tid not in self._m_jitter:
+                    self._m_jitter[tid] = [0, 0.0, 0.0, 0.0, 0.0]  # n,mx,M2x,my,M2y
+                j = self._m_jitter[tid]
+                j[0] += 1
+                dx = cx - j[1]; j[1] += dx / j[0]; j[2] += dx * (cx - j[1])
+                dy = cy - j[3]; j[3] += dy / j[0]; j[4] += dy * (cy - j[3])
+            else:
+                self._m_lost_frames[tid] = self._m_lost_frames.get(tid, 0) + 1
 
             # After LOST_HIDE frames the box disappears entirely.
             # Between 0 and LOST_HIDE it fades steadily.
@@ -673,5 +840,13 @@ class Module(Base):
             state.draw.append(DrawCommand(
                 kind="text",
                 x=float(x1), y=float(max(y1 - 8, 12)),
-                text=f"P{tid}", colour=draw_colour, thickness=1, layer=2,
+                text=player_label(tid), colour=draw_colour, thickness=1, layer=2,
             ))
+
+        # HopTrack: simultaneous detection — both P0 and P1 present this frame
+        present_pids = {
+            t.player_id for t in self.tracks.values()
+            if t.lost == 0 and t.player_id in (0, 1)
+        }
+        if 0 in present_pids and 1 in present_pids:
+            self._m_both_present += 1
