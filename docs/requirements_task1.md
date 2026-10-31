@@ -42,15 +42,20 @@ My budget from `game_types.py` is **8 ms per frame**. I am aiming for:
 |--------|-----|
 | Module time (ms/frame) | `profiler.py` summary at exit (press `q`, or `--headless 600`), 1-player and 2-player |
 | Effect switches | Count in a recorded two-player clip with crossings: how often a headband jumps to the other person |
-| Match rate (%) | Counted in `face.py` (matched faces / detected faces), printed at exit with `python main.py --metrics` |
-| Jitter (px) | Same report: mean frame-to-frame movement of the face centre while a player stands still, raw detection vs Kalman-filtered |
+| Two-face detection rate (%) | Frames where identity sees two players: how often both faces were detected and both were matched |
+| Match rate (%) | Detected faces attached to a player / detected faces |
+| Jitter, stationary (px) | Mean frame-to-frame movement of the face centre while a player stands still, raw detection vs Kalman-filtered |
+| Jitter, dynamic (px) | Mean change of movement between frames (p(t) − 2p(t−1) + p(t−2)) while moving, raw vs filtered; steady movement gives about 0, so only the shake is counted |
+| Alignment error (px, face widths) | Mean and maximum distance between the detected face centre and the filtered centre where the effect is drawn (no ground truth, so the detection is the reference) |
 
 | Scenario | What I measure |
 |----------|----------------|
 | Both players standing still, about 20 s | Jitter (raw vs filtered) |
 | Normal play: moving, crossing, coming closer and going back | Match rate, module time, effect switches |
 
-The match rate and jitter are counted in `face.py` and printed at exit when the game is started with `python main.py --metrics`. Without the flag nothing is printed.
+All metrics except module time and effect switches are counted in `face.py`
+and printed at exit when the game is started with `python main.py --metrics`.
+Without the flag nothing is printed.
 
 ## What I write into state
 

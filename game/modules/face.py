@@ -2,7 +2,7 @@
 Task 1 - Face tracking and Augmented Effects
 Owner: Shilpa John
 
-Pipeline (runs second: identity → face → pose → control → render):
+Pipeline (runs second: identity -> face -> pose -> control -> render):
   raw frame
     → BlazeFace face detection
     → Kalman prediction of each face centre
@@ -31,6 +31,9 @@ Contract
 
 **Metrics**: run ``python main.py --metrics`` to print the match rate and
 the raw vs filtered jitter when the game exits. Off by default.
+
+Design references: Kalman filter (Welch & Bishop, "An Introduction to the
+Kalman Filter", UNC TR 95-041).
 """
 from pathlib import Path
 import atexit
@@ -132,6 +135,15 @@ class Module(Base):
         self.jitter_raw = {}
         self.jitter_filtered = {}
         self._last_centres = {}
+        # Alignment error: per player, distance between the detected face
+        # centre and the filtered centre (where the effect is drawn)
+        self.align_px = {}
+        self.align_fw = {}
+        # Dynamic jitter: change of movement between frames (second
+        # difference); smooth motion gives ~0, so it also works while moving
+        self.shake_raw = {}
+        self.shake_filtered = {}
+        self.two_face = {"frames": 0, "detected": 0, "matched": 0}
         # registered always, prints only if metrics are on (main.py sets the
         # flag after the module is created)
         atexit.register(self.print_metrics)
@@ -367,20 +379,38 @@ class Module(Base):
         if self.metrics:
             self.record_jitter(pid, (face.cx, face.cy),
                                (tracked.cx, tracked.cy), reinit)
+            self.record_alignment(pid, (face.cx, face.cy),
+                                  (tracked.cx, tracked.cy), face.w)
 
         return tracked
 
     def record_jitter(self, pid, raw, filtered, reinit):
         """Store how far the raw and the filtered face centre moved since the
         previous frame. A restarted track starts a new sequence."""
-        last = self._last_centres.get(pid)
-        if last is not None and not reinit:
-            (rx, ry), (fx, fy) = last
+        history = [] if reinit else self._last_centres.get(pid, [])
+        if history:
+            (rx, ry), (fx, fy) = history[-1]
             self.jitter_raw.setdefault(pid, []).append(
                 math.hypot(raw[0] - rx, raw[1] - ry))
             self.jitter_filtered.setdefault(pid, []).append(
                 math.hypot(filtered[0] - fx, filtered[1] - fy))
-        self._last_centres[pid] = (raw, filtered)
+        if len(history) == 2:
+            # p(t) - 2 p(t-1) + p(t-2): zero for steady movement
+            (r2x, r2y), (f2x, f2y) = history[0]
+            self.shake_raw.setdefault(pid, []).append(
+                math.hypot(raw[0] - 2 * rx + r2x, raw[1] - 2 * ry + r2y))
+            self.shake_filtered.setdefault(pid, []).append(
+                math.hypot(filtered[0] - 2 * fx + f2x,
+                           filtered[1] - 2 * fy + f2y))
+        self._last_centres[pid] = (history + [(raw, filtered)])[-2:]
+
+    def record_alignment(self, pid, raw, filtered, width):
+        """Store the distance between the detected face centre and the
+        filtered centre where the effect is drawn, in px and face widths."""
+        d = math.hypot(filtered[0] - raw[0], filtered[1] - raw[1])
+        self.align_px.setdefault(pid, []).append(d)
+        if width > 0:
+            self.align_fw.setdefault(pid, []).append(d / width)
 
     def print_metrics(self):
         """Match rate and jitter, printed at exit when metrics are on.
@@ -399,6 +429,11 @@ class Module(Base):
         print(f"faces detected  : {s['detected']}")
         print(f"faces matched   : {s['matched']}  ({rate:.1f} % match rate)")
         print(f"filter restarts : {s['reinit']}")
+        t = self.two_face
+        if t["frames"]:
+            print(f"two-player frames: {t['frames']}, both faces detected "
+                  f"{100.0 * t['detected'] / t['frames']:.1f} %, both matched "
+                  f"{100.0 * t['matched'] / t['frames']:.1f} %")
         print("jitter, mean frame-to-frame centre movement (stand still to measure):")
         for pid in sorted(self.jitter_raw):
             raw = self.jitter_raw[pid]
@@ -408,6 +443,22 @@ class Module(Base):
             less = 100.0 * (1 - f / r) if r > 0 else 0.0
             print(f"   P{pid}: raw {r:.2f} px, filtered {f:.2f} px "
                   f"({less:.0f} % less, {len(raw)} frames)")
+        print("dynamic jitter, change of movement per frame (valid while moving):")
+        for pid in sorted(self.shake_raw):
+            raw = self.shake_raw[pid]
+            filt = self.shake_filtered[pid]
+            r = sum(raw) / len(raw)
+            f = sum(filt) / len(filt)
+            less = 100.0 * (1 - f / r) if r > 0 else 0.0
+            print(f"   P{pid}: raw {r:.2f} px, filtered {f:.2f} px "
+                  f"({less:.0f} % less, {len(raw)} frames)")
+        print("alignment error, detected face centre vs drawn effect centre:")
+        for pid in sorted(self.align_px):
+            px = self.align_px[pid]
+            fw = self.align_fw.get(pid) or [0.0]
+            print(f"   P{pid}: mean {sum(px) / len(px):.2f} px "
+                  f"({sum(fw) / len(fw):.3f} face widths), "
+                  f"max {max(px):.1f} px, {len(px)} frames")
 
     def remove_track(self, pid):
         """Remove the stored face tracking data for a player."""
@@ -513,6 +564,15 @@ class Module(Base):
         self.stats["frames"] += 1
         self.stats["detected"] += len(detections)
         self.stats["matched"] += len(assignments)
+        if self.metrics:
+            # Two-face detection rate: frames where identity sees two
+            # players, and how often both faces were detected / matched
+            if sum(1 for p in state.players if p.visible) >= 2:
+                self.two_face["frames"] += 1
+                if len(detections) >= 2:
+                    self.two_face["detected"] += 1
+                if len(assignments) >= 2:
+                    self.two_face["matched"] += 1
 
         if self.debug and len(assignments) < len(detections):
             print(
