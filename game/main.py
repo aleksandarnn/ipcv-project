@@ -128,6 +128,8 @@ def main() -> None:
                              "requires input and output both visible)")
     parser.add_argument("--debug", action="store_true",
                         help="enable module debug overlays (pose skeleton, etc.)")
+    parser.add_argument("--metrics", action="store_true",
+                        help="print metrics at exit")
     args = parser.parse_args()
 
     import os
@@ -141,6 +143,9 @@ def main() -> None:
         if hasattr(module, "debug"):
             module.debug = bool(args.debug)
             print(f"[main] {module.name}.debug = {module.debug}")
+        if hasattr(module, "metrics") and args.metrics:
+            module.metrics = True
+            print(f"[main] {module.name}.metrics = True")
         # Pose must wait for identity boxes — do not show fixed stub crops.
         if module.name == "pose" and identity_loaded:
             module.allow_stubs = False

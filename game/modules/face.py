@@ -28,8 +28,12 @@ Contract
 
 **Debug**: run ``python main.py --debug`` to also draw the face box
 (green = detected this frame, cyan = predicted).
+
+**Metrics**: run ``python main.py --metrics`` to print the match rate and
+the raw vs filtered jitter when the game exits. Off by default.
 """
 from pathlib import Path
+import atexit
 import time
 import math
 
@@ -117,6 +121,20 @@ class Module(Base):
 
         # counters for the report
         self.stats = {"frames": 0, "detected": 0, "matched": 0, "reinit": 0}
+
+        # Metrics (match rate, jitter): off by default. main.py sets
+        # self.metrics = True for "python main.py --metrics".
+        self.metrics = False
+
+        # Jitter: per player, frame-to-frame movement of the raw detected
+        # centre and of the filtered centre, over consecutive matched frames.
+        # Only collected when metrics are on.
+        self.jitter_raw = {}
+        self.jitter_filtered = {}
+        self._last_centres = {}
+        # registered always, prints only if metrics are on (main.py sets the
+        # flag after the module is created)
+        atexit.register(self.print_metrics)
 
     def create_filter(self, face):
         """Track face centre and velocity: x, y, vx, vy."""
@@ -346,11 +364,54 @@ class Module(Base):
         self.faces[pid] = tracked
         self.measured[pid] = (face.cx, face.cy)
         self.missing[pid] = 0
+        if self.metrics:
+            self.record_jitter(pid, (face.cx, face.cy),
+                               (tracked.cx, tracked.cy), reinit)
 
         return tracked
 
+    def record_jitter(self, pid, raw, filtered, reinit):
+        """Store how far the raw and the filtered face centre moved since the
+        previous frame. A restarted track starts a new sequence."""
+        last = self._last_centres.get(pid)
+        if last is not None and not reinit:
+            (rx, ry), (fx, fy) = last
+            self.jitter_raw.setdefault(pid, []).append(
+                math.hypot(raw[0] - rx, raw[1] - ry))
+            self.jitter_filtered.setdefault(pid, []).append(
+                math.hypot(filtered[0] - fx, filtered[1] - fy))
+        self._last_centres[pid] = (raw, filtered)
+
+    def print_metrics(self):
+        """Match rate and jitter, printed at exit when metrics are on.
+
+        Match rate = detected faces attached to a player / detected faces.
+        Jitter = mean frame-to-frame movement of the face centre; measure it
+        with the players standing still, so the movement is detector noise.
+        """
+        s = self.stats
+        if not self.metrics or s["frames"] == 0:
+            return
+        rate = 100.0 * s["matched"] / s["detected"] if s["detected"] else 0.0
+        print()
+        print("FACE MODULE REPORT (task 1)")
+        print(f"frames          : {s['frames']}")
+        print(f"faces detected  : {s['detected']}")
+        print(f"faces matched   : {s['matched']}  ({rate:.1f} % match rate)")
+        print(f"filter restarts : {s['reinit']}")
+        print("jitter, mean frame-to-frame centre movement (stand still to measure):")
+        for pid in sorted(self.jitter_raw):
+            raw = self.jitter_raw[pid]
+            filt = self.jitter_filtered[pid]
+            r = sum(raw) / len(raw)
+            f = sum(filt) / len(filt)
+            less = 100.0 * (1 - f / r) if r > 0 else 0.0
+            print(f"   P{pid}: raw {r:.2f} px, filtered {f:.2f} px "
+                  f"({less:.0f} % less, {len(raw)} frames)")
+
     def remove_track(self, pid):
         """Remove the stored face tracking data for a player."""
+        self._last_centres.pop(pid, None)
         self.filters.pop(pid, None)
         self.faces.pop(pid, None)
         self.measured.pop(pid, None)
@@ -482,6 +543,8 @@ class Module(Base):
                 continue
 
             self.missing[pid] += 1
+            # no measurement this frame: the jitter sequence starts again
+            self._last_centres.pop(pid, None)
 
             if self.missing[pid] > self.max_missing_frames:
                 self.remove_track(pid)

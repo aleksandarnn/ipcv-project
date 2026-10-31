@@ -15,13 +15,13 @@ Every face is attached to the player identity from Task 3. Without that, the
 headband and the health bar could end up on the wrong person when the players
 cross.
 
-My module runs second in the pipeline: identity → **face** → pose → control → render.
+My module runs second in the pipeline: identity -> **face** -> pose -> control -> render.
 
 ## What I will build
 
 - Face detection on the full frame with MediaPipe BlazeFace (full-range model, for players 1.5–3 m from a laptop webcam).
 - Face position, size and head tilt (from the line between the eyes), plus a rough left/right turn (from the nose position).
-- Matching of each face to a Task 3 player: the face must be inside that player's body box  and close to where that face was predicted.
+- Matching of each face to a Task 3 player: the face must be inside that player's body box and close to where that face was predicted.
 - Temporal smoothing against jitter: a Kalman filter for the face centre, an exponential moving average for size and tilt.
 - Controlled behaviour when a face is briefly lost: the Kalman prediction keeps the headband in place for up to 5 frames, then it is removed; it comes back when the face is detected again.
 - The face effect: a cloth headband in the player's colour, drawn in face coordinates so it scales and rotates with the head.
@@ -42,16 +42,15 @@ My budget from `game_types.py` is **8 ms per frame**. I am aiming for:
 |--------|-----|
 | Module time (ms/frame) | `profiler.py` summary at exit (press `q`, or `--headless 600`), 1-player and 2-player |
 | Effect switches | Count in a recorded two-player clip with crossings: how often a headband jumps to the other person |
-| Match rate (%) | Counted in `face.py` (matched faces / detected faces), printed when the game exits |
-| Jitter (px) | Logged in `face.py`: mean frame-to-frame movement of the face centre while a player stands still, raw detection vs Kalman-filtered |
+| Match rate (%) | Counted in `face.py` (matched faces / detected faces), printed at exit with `python main.py --metrics` |
+| Jitter (px) | Same report: mean frame-to-frame movement of the face centre while a player stands still, raw detection vs Kalman-filtered |
 
 | Scenario | What I measure |
 |----------|----------------|
 | Both players standing still, about 20 s | Jitter (raw vs filtered) |
 | Normal play: moving, crossing, coming closer and going back | Match rate, module time, effect switches |
-| Hand briefly covering the face | Short detection failures: headband stays briefly, then returns on the right player (shown in the demo video, no number) |
 
-The code that counts the match rate, logs the jitter and prints both at the end of a run will be added to `face.py` before the evaluation.
+The match rate and jitter are counted in `face.py` and printed at exit when the game is started with `python main.py --metrics`. Without the flag nothing is printed.
 
 ## What I write into state
 
@@ -66,7 +65,7 @@ state.draw.append(DrawCommand(kind="text", text="P0  85", layer=2))
 ```
 
 I never write a predicted (guessed) face into `player.face`, so other tasks do not
-treat predictions as actual face detections
+treat predictions as actual face detections.
 
 With `--debug` I also draw the face box: green = detected this frame, cyan =
 predicted.
@@ -79,25 +78,27 @@ predicted.
 
 ## What I need from each teammate
 
-**Task 3 (Akash) — player boxes.**
+**Task 3 (Akash) - player boxes.**
 I only attach a face to a player that has a body box. Please make sure the box
 includes the head, keep the same `player_id` for the same person all round,
 and also detect a player who only arrives after the game has started. If a
 player has no box, they get no headband or health bar, even when their face is
 visible.
 
-**Task 4 (Vaishnav) — health.**
+**Task 4 (Vaishnav) - health.**
 Identity creates new `Player` objects every frame, so keep each player's health
 in your module by `player_id` and write it into `player.health` every frame, in
 the range 0–100. Otherwise the health bar stays at 100.
 
-**Task 5 (Aleksandar) — drawing**
-My effects are only draw commands, the renderer draws them.
+**Task 5 (Aleksandar) - drawing and `--metrics` flag.**
+My effects are only draw commands; the renderer draws them. I added a `--metrics`
+flag to `main.py` (5 lines) that switches on my metrics report.
 
-**Task 2 (Valerii) — no dependency.**
+**Task 2 (Valerii) - no dependency.**
 
 ## Failure cases
 
-- No identity box for a player,no headband or health bar for that player.
-- Face hidden for more than 5 frames: the headband disappears until the face
-is seen again. The 5-frame limit is a design choice.
+- No identity box for a player: no headband or health bar for that player.
+- Face hidden for more than 5 frames (about 0.17 s): the headband disappears until
+  the face is detected again. The 5-frame limit is a design choice: a longer
+  prediction could drift onto the other player.
