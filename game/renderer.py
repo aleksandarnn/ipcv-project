@@ -89,8 +89,10 @@ class Renderer:
         return out
 
     def draw(self, frame: np.ndarray, state: GameState) -> np.ndarray:
-        # The arena goes down first: the webcam picture inside a dojo.
-        out = self.arena.compose(frame)
+        # The arena goes down first: the webcam picture inside a dojo. The
+        # players are passed in so the dojo can be cut away around them
+        # instead of fading out the whole middle of the picture.
+        out = self.arena.compose(frame, state.players)
 
         # Camera shake, done by rolling the image a few pixels. Cheap, and it
         # sells the impact far better than any overlay.
