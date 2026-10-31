@@ -21,6 +21,7 @@ Design references: SORT (Bewley 2016), HopTrack (Li et al. 2024).
 """
 from __future__ import annotations
 
+import time
 import numpy as np
 import cv2
 
@@ -451,6 +452,9 @@ class Module(Base):
         self._m_run_lengths: dict[int, list] = {}
         # HopTrack: simultaneous detection — frames where both P0 and P1 present
         self._m_both_present = 0
+        # timing: wall-clock start and cumulative processing time
+        self._m_wall_start: float = time.time()
+        self._m_proc_total_ms: float = 0.0
 
     def _print_metrics(self) -> None:
         import os
@@ -460,15 +464,32 @@ class Module(Base):
         total = self._m_frames
         if total == 0:
             return
-        print()
-        print(f"── identity metrics ({mode}) ──────────────────────────────")
-        print(f"  total frames      : {total}")
-        print(f"  detector calls    : {self._m_detect_calls}  "
-              f"(1 every {total/max(1,self._m_detect_calls):.1f} frames)")
-        print()
+
+        elapsed_s   = max(time.time() - self._m_wall_start, 0.001)
+        elapsed_min = elapsed_s / 60.0
+        mean_lat_ms = self._m_proc_total_ms / total
+        mean_fps    = 1000.0 / max(mean_lat_ms, 0.001)
+
+        lines: list[str] = []
+        add = lines.append
+
+        add("")
+        add(f"── identity metrics ({mode}) ──────────────────────────────")
+        add(f"  timestamp         : {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        add(f"  detector backend  : {mode}")
+        add(f"  total frames      : {total}")
+        add(f"  elapsed time      : {elapsed_s:.1f} s  ({elapsed_min:.2f} min)")
+        add(f"  detector calls    : {self._m_detect_calls}  "
+            f"(1 every {total/max(1,self._m_detect_calls):.1f} frames)")
+        add(f"  mean latency      : {mean_lat_ms:.2f} ms/frame  "
+            f"({mean_fps:.1f} FPS equivalent)  [processing time]")
+        add("")
+
         all_pids = sorted(
             set(self._m_player_frames) | set(self._m_lost_frames)
         )
+
+        add("  [SORT metrics]")
         for pid in all_pids:
             pf = self._m_player_frames.get(pid, 0)
             lf = self._m_lost_frames.get(pid, 0)
@@ -477,30 +498,42 @@ class Module(Base):
                 continue
             rate = 100.0 * pf / tracked
             frags = self._m_fragments.get(pid, 0)
-            print(f"  {player_label(pid)} detection rate  : {rate:.1f}%  "
-                  f"({pf} present / {lf} lost / {tracked} total)")
-            print(f"  {player_label(pid)} fragments (SORT): {frags}  "
-                  f"(gaps opened in the track)")
+            add(f"  {player_label(pid)} detection rate  : {rate:.1f}%  "
+                f"({pf} present / {lf} lost / {tracked} total)")
+            add(f"  {player_label(pid)} fragments       : {frags}  "
+                f"(track gaps opened)")
             j = self._m_jitter.get(pid)
             if j and j[0] >= 2:
                 std_x = (j[2] / j[0]) ** 0.5
                 std_y = (j[4] / j[0]) ** 0.5
                 jitter_px = (std_x**2 + std_y**2) ** 0.5
-                print(f"  {player_label(pid)} centroid jitter : {jitter_px:.1f} px RMS  "
-                      f"(MOTP proxy, still-player)")
+                add(f"  {player_label(pid)} centroid jitter : {jitter_px:.1f} px RMS  "
+                    f"(MOTP proxy, still-player)")
         for pid in all_pids:
             times = self._m_reid_times.get(pid, [])
             if times:
                 mean_t = sum(times) / len(times)
                 worst  = max(times)
-                print(f"  {player_label(pid)} Re-ID time     : mean {mean_t:.1f} frames, "
-                      f"worst {worst} frames  (over {len(times)} exit-return trials)")
+                add(f"  {player_label(pid)} Re-ID time     : mean {mean_t:.1f} frames, "
+                    f"worst {worst} frames  ({len(times)} exit-return trials)")
+
+        add("")
+        add(f"  ID switches       : {self._m_id_switches}  "
+            f"({self._m_id_switches / elapsed_min:.2f} /min)  "
+            f"[re-entry failed → new ID]")
+        add(f"  re-entry matches  : {self._m_reentry}  "
+            f"[same ID recovered on re-appearance]")
+        if self._m_reentry + self._m_id_switches > 0:
+            idf1_proxy = 100.0 * self._m_reentry / (
+                self._m_reentry + self._m_id_switches
+            )
+            add(f"  IDF1 proxy        : {idf1_proxy:.1f}%  "
+                f"[re-entry accuracy; 100% = no identity loss]")
 
         # ── HopTrack metrics ────────────────────────────────────────────────
-        print()
-        print("  [HopTrack]")
+        add("")
+        add("  [HopTrack metrics]")
         for pid in all_pids:
-            # flush any still-open run (player present when game ended)
             runs = list(self._m_run_lengths.get(pid, []))
             open_run = self._m_current_run.get(pid, 0)
             if open_run > 0:
@@ -508,33 +541,20 @@ class Module(Base):
             if runs:
                 mean_run = sum(runs) / len(runs)
                 worst_run = max(runs)
-                print(f"  {player_label(pid)} track continuity: mean {mean_run:.1f} frames, "
-                      f"longest {worst_run} frames  (AssA proxy — higher = more stable)")
-        total_tracked = max(
-            self._m_player_frames.get(0, 0) + self._m_lost_frames.get(0, 0),
-            self._m_player_frames.get(1, 0) + self._m_lost_frames.get(1, 0),
-            1,
-        )
+                add(f"  {player_label(pid)} track continuity: mean {mean_run:.1f} frames, "
+                    f"longest {worst_run} frames  (AssA proxy)")
         simul_rate = 100.0 * self._m_both_present / total
-        print(f"  simultaneous det. : {simul_rate:.1f}%  "
-              f"({self._m_both_present}/{total} frames both P0+P1 present)")
+        add(f"  simultaneous det. : {simul_rate:.1f}%  "
+            f"({self._m_both_present}/{total} frames both players visible)")
         hop_attempts = self._m_reentry + self._m_id_switches
         hop_rate = 100.0 * hop_attempts / max(total, 1)
-        print(f"  hop attempt rate  : {hop_rate:.1f}%  "
-              f"({hop_attempts} re-associations over {total} frames)")
+        add(f"  hop attempt rate  : {hop_rate:.1f}%  "
+            f"({hop_attempts} re-associations over {total} frames)")
 
-        print()
-        print(f"  ID switches (SORT): {self._m_id_switches}  "
-              f"(re-entry failed → new ID assigned)")
-        print(f"  re-entry matches  : {self._m_reentry}  "
-              f"(IDF1 proxy — same ID recovered on re-appearance)")
-        if self._m_reentry + self._m_id_switches > 0:
-            idf1_proxy = 100.0 * self._m_reentry / (
-                self._m_reentry + self._m_id_switches
-            )
-            print(f"  IDF1 proxy        : {idf1_proxy:.1f}%  "
-                  f"(re-entry accuracy; 100% = no identity loss)")
-        print("────────────────────────────────────────────────────────────")
+        add("────────────────────────────────────────────────────────────")
+
+        for line in lines:
+            print(line)
 
     def reset(self) -> None:
         self._print_metrics()
@@ -548,6 +568,7 @@ class Module(Base):
     # ── entry point ──────────────────────────────────────────────────────────
 
     def process(self, frame: np.ndarray, state: GameState) -> None:
+        _proc_t0 = time.perf_counter()
         h, w = frame.shape[:2]
 
         # 1. Kalman predict — moves every track forward one frame
@@ -642,6 +663,7 @@ class Module(Base):
             t.lost = min(t.lost, MAX_LOST)
 
         self._frame_idx += 1
+        self._m_proc_total_ms += (time.perf_counter() - _proc_t0) * 1000.0
 
     # ── two-stage association ─────────────────────────────────────────────────
 
