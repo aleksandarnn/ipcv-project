@@ -146,8 +146,14 @@ class Renderer:
             cv2.rectangle(img, (x0, top), (x0 + bar_w, top + bar_h),
                           (210, 210, 215), 2, cv2.LINE_AA)
 
-            label = player_label(player.player_id)
-            lx = x0 if left_side else x0 + bar_w - 34
+            # Name, health and rounds won, on one line under the bar. The
+            # rounds come from task 4 through the shared player record, so
+            # this is the only HUD on screen.
+            label = f"{player_label(player.player_id)}  {player.health}"
+            if player.score:
+                label += f"  wins {player.score}"
+            width_px = 11 * len(label)
+            lx = x0 if left_side else x0 + bar_w - width_px
             self._text(img, label, (lx, top + bar_h + 20), 0.62, player.colour, 2)
 
         if state.phase == "playing" and len(state.players) >= 2:

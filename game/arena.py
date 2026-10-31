@@ -204,7 +204,10 @@ class Arena:
         # middle: the artwork at full strength, and its own weight map as a
         # single 8-bit channel to multiply the cut-out into.
         self._art = overlay
-        self._full1 = (np.clip(art_weight, 0.0, 1.0) * 255).astype(np.uint8)
+        full1 = (np.clip(art_weight, 0.0, 1.0) * 255).astype(np.uint8)
+        full3 = cv2.merge((full1, full1, full1))
+        self._full_inv8 = 255 - full3
+        self._full_pre8 = cv2.multiply(overlay, full3, scale=1 / 255.0)
         self._small = (max(8, width // 4), max(8, height // 4))
 
     # -------------------------------------------------------------- drawing
@@ -231,25 +234,49 @@ class Arena:
             return cv2.add(cv2.multiply(frame, self._inv8, scale=1 / 255.0),
                            self._pre8)
 
-        # The cut-out is drawn at quarter size and blurred there, which is 16
-        # times less work than blurring it at full size and is more than soft
-        # enough once it is scaled back up.
-        sw, sh = self._small
-        keep = np.zeros((sh, sw), np.uint8)
-        for box in boxes:
-            cx = int((box.x0 + box.x1) * 0.5 * sw / width)
-            cy = int((box.y0 + box.y1) * 0.5 * sh / height)
-            ax = max(4, int(box.w * 0.62 * sw / width))
-            ay = max(4, int(box.h * 0.62 * sh / height))
-            cv2.ellipse(keep, (cx, cy), (ax, ay), 0, 0, 360, 255, -1)
-        keep = cv2.GaussianBlur(keep, (0, 0), max(2.0, sw / 28.0))
-        keep = cv2.resize(keep, (width, height), interpolation=cv2.INTER_LINEAR)
+        # The dojo at full strength everywhere, from the cached weights, so
+        # this part costs the same two operations it always did.
+        out = cv2.add(cv2.multiply(frame, self._full_inv8, scale=1 / 255.0),
+                      self._full_pre8)
 
-        # alpha = artwork weight, minus wherever a player is standing.
-        a1 = cv2.multiply(self._full1, 255 - keep, scale=1 / 255.0)
-        a3 = cv2.merge((a1, a1, a1))
-        return cv2.add(cv2.multiply(frame, 255 - a3, scale=1 / 255.0),
-                       cv2.multiply(self._art, a3, scale=1 / 255.0))
+        # Then the players are let back through, and ONLY inside their own
+        # boxes. Blending the whole frame cost 6.4 ms at 960 wide, over the
+        # render budget; a player covers a fraction of the picture, so doing
+        # it per box brings it back under 3.
+        sw, sh = self._small
+        height_f, width_f = float(height), float(width)
+        keep_small = np.zeros((sh, sw), np.uint8)
+        for box in boxes:
+            cx = int((box.x0 + box.x1) * 0.5 * sw / width_f)
+            cy = int((box.y0 + box.y1) * 0.5 * sh / height_f)
+            # Semi-axes, so 0.55 makes the clear ellipse about 10 % wider
+            # than the detection box: enough to hold a player who has just
+            # moved, without clearing half the room around them.
+            ax = max(3, int(box.w * 0.55 * sw / width_f))
+            ay = max(3, int(box.h * 0.55 * sh / height_f))
+            cv2.ellipse(keep_small, (cx, cy), (ax, ay), 0, 0, 360, 255, -1)
+        keep_small = cv2.GaussianBlur(keep_small, (0, 0), max(2.0, sw / 28.0))
+
+        for box in boxes:
+            # Room around the box for the blurred edge to fall off in.
+            mx, my = int(box.w * 0.22), int(box.h * 0.22)
+            x0 = max(0, int(box.x0) - mx)
+            y0 = max(0, int(box.y0) - my)
+            x1 = min(width, int(box.x1) + mx)
+            y1 = min(height, int(box.y1) + my)
+            if x1 - x0 < 2 or y1 - y0 < 2:
+                continue
+            sx0, sy0 = int(x0 * sw / width_f), int(y0 * sh / height_f)
+            sx1 = max(sx0 + 1, int(x1 * sw / width_f))
+            sy1 = max(sy0 + 1, int(y1 * sh / height_f))
+            k = cv2.resize(keep_small[sy0:sy1, sx0:sx1], (x1 - x0, y1 - y0),
+                           interpolation=cv2.INTER_LINEAR)
+            k3 = cv2.merge((k, k, k))
+            roi = out[y0:y1, x0:x1]
+            out[y0:y1, x0:x1] = cv2.add(
+                cv2.multiply(roi, 255 - k3, scale=1 / 255.0),
+                cv2.multiply(frame[y0:y1, x0:x1], k3, scale=1 / 255.0))
+        return out
 
     def horizon(self, height: int) -> int:
         return int(height * 0.68)

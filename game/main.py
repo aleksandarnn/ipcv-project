@@ -152,6 +152,19 @@ def main() -> None:
         if module.name == "pose" and identity_loaded:
             module.allow_stubs = False
             print("[main] pose.allow_stubs = False (using identity boxes)")
+    # Task 4 draws its own health bars across the top, in the same place as
+    # mine. Two HUDs for the same information is confusing, and theirs shows
+    # through at the edges because the two are a few pixels apart. Only one
+    # can own the top of the screen, so theirs is switched off here rather
+    # than by editing their file; the wins counter it carried is now drawn on
+    # my bars instead.
+    for module in modules:
+        if module.name == "control":
+            control_module = sys.modules.get(module.__class__.__module__)
+            if control_module is not None and hasattr(control_module, "DRAW_HUD"):
+                control_module.DRAW_HUD = False
+                print("[main] control.DRAW_HUD = False (task 5 owns the HUD)")
+
     renderer = Renderer()
     profiler = Profiler()
 
